@@ -1,0 +1,134 @@
+<!DOCTYPE html><html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Key System</title><style>
+body {
+    background: #0d0d0d;
+    color: white;
+    font-family: Arial;
+    text-align: center;
+}
+
+h1 {
+    margin-top: 30px;
+}
+
+.container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.card {
+    background: #1c1c1c;
+    margin: 15px;
+    padding: 20px;
+    width: 260px;
+    border-radius: 12px;
+    box-shadow: 0 0 10px #000;
+}
+
+button {
+    margin-top: 10px;
+    padding: 10px;
+    width: 100%;
+    border: none;
+    border-radius: 6px;
+    background: #00c853;
+    color: white;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #00e676;
+}
+
+.premium {
+    background: gold;
+    color: black;
+}
+
+.keyBox {
+    margin-top: 30px;
+    font-size: 18px;
+}
+
+</style></head><body><h1>🔑 HỆ THỐNG GET KEY</h1><div class="container"><div class="card">
+    <h3>FREE - 1 DAY</h3>
+    <button onclick="getKey('1day')">Lấy miễn phí</button>
+</div>
+
+<div class="card">
+    <h3>1 WEEK - 10K</h3>
+    <button onclick="fakePay('1week')">Thanh toán</button>
+</div>
+
+<div class="card">
+    <h3>1 MONTH - 50K</h3>
+    <button onclick="fakePay('1month')">Thanh toán</button>
+</div>
+
+<div class="card premium">
+    <h3>💎 PREMIUM - 200K</h3>
+    <button onclick="fakePay('premium')">Mua ngay</button>
+</div>
+
+</div><div class="keyBox" id="keyBox"></div><script>
+
+// tạo key random
+function generateKey(type){
+    return type.toUpperCase() + "_" + Math.random().toString(36).substring(2,10);
+}
+
+// xử lý thời gian
+function getExpire(type){
+    let now = Date.now();
+
+    if(type === "1day") return now + 86400000;
+    if(type === "1week") return now + 7*86400000;
+    if(type === "1month") return now + 30*86400000;
+    if(type === "premium") return now + 365*86400000;
+}
+
+// lấy key
+function getKey(type){
+    let key = generateKey(type);
+    let expire = getExpire(type);
+
+    let data = {
+        key: key,
+        expire: expire,
+        type: type
+    };
+
+    localStorage.setItem("user_key", JSON.stringify(data));
+
+    showKey(data);
+}
+
+// giả lập thanh toán
+function fakePay(type){
+    alert("💰 Thanh toán giả lập thành công!");
+    getKey(type);
+}
+
+// hiển thị key
+function showKey(data){
+    let time = new Date(data.expire).toLocaleString();
+
+    document.getElementById("keyBox").innerHTML = 
+        "KEY: <b>" + data.key + "</b><br>" +
+        "Loại: " + data.type + "<br>" +
+        "Hết hạn: " + time;
+}
+
+// load lại key cũ
+window.onload = function(){
+    let data = localStorage.getItem("user_key");
+    if(data){
+        showKey(JSON.parse(data));
+    }
+}
+
+</script></body>
+</html>
