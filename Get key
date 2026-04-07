@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>UFO SPEED</title>
+
+<style>
+body {
+  background: radial-gradient(circle,#0a0a0a,#000);
+  color: #0ff;
+  font-family: Arial;
+  text-align: center;
+}
+
+.box {
+  background: #111;
+  padding: 25px;
+  border-radius: 15px;
+  display: inline-block;
+  margin-top: 50px;
+  width: 360px;
+  box-shadow: 0 0 25px #0ff3;
+}
+
+h1 {
+  text-shadow: 0 0 10px #0ff;
+}
+
+button {
+  margin: 5px;
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.free { background: lime; }
+.week { background: orange; }
+.month { background: red; color: white; }
+
+input {
+  padding: 10px;
+  width: 85%;
+  margin-top: 10px;
+  border-radius: 5px;
+  border: none;
+}
+
+#adminPanel {
+  display: none;
+  margin-top: 20px;
+  background: #000;
+  padding: 10px;
+  border-radius: 10px;
+  max-height: 300px;
+  overflow-y: auto;
+  text-align: left;
+  font-size: 13px;
+}
+
+.smallBtn {
+  padding: 3px 6px;
+  font-size: 11px;
+  margin-left: 5px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="box">
+  <h1>🛸 UFO SPEED</h1>
+
+  <button class="free" onclick="AI.create(1)">Free</button>
+  <button class="week" onclick="AI.create(7)">Week</button>
+  <button class="month" onclick="AI.create(30)">Month</button>
+
+  <p id="keyDisplay"></p>
+
+  <h3>Check Key</h3>
+  <input id="inputKey" placeholder="Nhập key hoặc ADMIN">
+  <br>
+  <button onclick="AI.check()">Check</button>
+
+  <p id="result"></p>
+
+  <!-- ADMIN -->
+  <div id="adminPanel">
+    <h3>👑 ADMIN PANEL</h3>
+
+    <input id="adminDays" placeholder="Số ngày">
+    <button onclick="AI.adminCreate()">Tạo Key</button>
+    <button onclick="AI.clearAll()">Xoá tất cả</button>
+
+    <div id="adminList"></div>
+  </div>
+</div>
+
+<script>
+
+const AI = {
+
+  // ===== DATA =====
+  data() {
+    return JSON.parse(localStorage.getItem("UFO_KEYS")) || {
+      keys: [],
+      deleted: [],
+      logs: []
+    };
+  },
+
+  save(d) {
+    localStorage.setItem("UFO_KEYS", JSON.stringify(d));
+  },
+
+  log(msg) {
+    let d = this.data();
+    d.logs.push({
+      time: new Date().toLocaleString(),
+      msg: msg
+    });
+    this.save(d);
+  },
+
+  // ===== CLEAN =====
+  clean() {
+    let d = this.data();
+    let now = Date.now();
+
+    d.keys = d.keys.filter(k => {
+      if (k.expire <= now) {
+        d.deleted.push(k);
+        this.log("Auto delete: " + k.key);
+        return false;
+      }
+      return true;
+    });
+
+    this.save(d);
+  },
+
+  // ===== KEY GEN =====
+  generate(keys) {
+    let key;
+    do {
+      key = "UNTRAL.CODEX-" + Math.floor(Math.random()*999999);
+    } while (keys.some(k => k.key === key));
+    return key;
+  },
+
+  // ===== CREATE =====
+  create(days) {
+    this.clean();
+
+    let d = this.data();
+    let key = this.generate(d.keys);
+
+    d.keys.push({
+      key: key,
+      expire: Date.now() + days * 86400000
+    });
+
+    this.save(d);
+    this.log("Create: " + key);
+
+    document.getElementById("keyDisplay").innerText = "🔑 " + key;
+    this.updateAdmin();
+  },
+
+  // ===== CHECK =====
+  check() {
+    let input = document.getElementById("inputKey").value.trim();
+
+    if (input === "ADMIN") {
+      document.getElementById("adminPanel").style.display = "block";
+      this.updateAdmin();
+      return;
+    }
+
+    this.clean();
+
+    let d = this.data();
+    let k = d.keys.find(x => x.key === input);
+
+    if (!k) {
+      document.getElementById("result").innerText = "❌ Sai key";
+      return;
+    }
+
+    this.startTimer(k);
+  },
+
+  // ===== TIMER =====
+  startTimer(k) {
+    clearInterval(this.timer);
+
+    this.timer = setInterval(() => {
+      let diff = k.expire - Date.now();
+
+      if (diff <= 0) {
+        document.getElementById("result").innerText = "⛔ Hết hạn";
+        clearInterval(this.timer);
+        return;
+      }
+
+      let h = Math.floor(diff / 3600000);
+      let m = Math.floor((diff % 3600000) / 60000);
+      let s = Math.floor((diff % 60000) / 1000);
+
+      document.getElementById("result").innerText =
+        `✅ Còn: ${h}h ${m}m ${s}s`;
+    }, 1000);
+  },
+
+  // ===== ADMIN CREATE =====
+  adminCreate() {
+    let days = parseInt(document.getElementById("adminDays").value);
+    if (!days) return;
+
+    this.create(days);
+  },
+
+  // ===== DELETE =====
+  deleteKey(key) {
+    let d = this.data();
+
+    let index = d.keys.findIndex(k => k.key === key);
+    if (index === -1) return;
+
+    let removed = d.keys.splice(index, 1)[0];
+    d.deleted.push(removed);
+
+    this.save(d);
+    this.log("Delete: " + key);
+
+    this.updateAdmin();
+  },
+
+  // ===== RESTORE =====
+  restoreKey(key) {
+    let d = this.data();
+
+    let index = d.deleted.findIndex(k => k.key === key);
+    if (index === -1) return;
+
+    let restored = d.deleted.splice(index, 1)[0];
+    d.keys.push(restored);
+
+    this.save(d);
+    this.log("Restore: " + key);
+
+    this.updateAdmin();
+  },
+
+  // ===== CLEAR =====
+  clearAll() {
+    localStorage.removeItem("UFO_KEYS");
+    this.updateAdmin();
+  },
+
+  // ===== ADMIN UI =====
+  updateAdmin() {
+    let d = this.data();
+
+    let html = "<b>🟢 KEY ĐANG HOẠT ĐỘNG</b><br>";
+    d.keys.forEach(k => {
+      html += `${k.key}
+      <button class="smallBtn" onclick="AI.deleteKey('${k.key}')">X</button><br>`;
+    });
+
+    html += "<br><b>🔴 KEY ĐÃ XOÁ</b><br>";
+    d.deleted.forEach(k => {
+      html += `${k.key}
+      <button class="smallBtn" onclick="AI.restoreKey('${k.key}')">↺</button><br>`;
+    });
+
+    html += "<br><b>📜 LỊCH SỬ</b><br>";
+    d.logs.slice(-10).reverse().forEach(l => {
+      html += `${l.time} - ${l.msg}<br>`;
+    });
+
+    document.getElementById("adminList").innerHTML = html;
+  }
+
+};
+
+</script>
+
+</body>
+</html>
