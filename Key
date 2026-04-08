@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UFO SPEED — Hệ Thống Key</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --low: #00ff88;
+    --speed: #00ccff;
+    --danger: #ff0033;
+    --bg: #030610;
+    --card: rgba(255,255,255,0.03);
+    --border: rgba(255,255,255,0.07);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: #fff;
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Starfield */
+  #stars {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.6) 0%, transparent 100%),
+      radial-gradient(1px 1px at 80% 10%, rgba(255,255,255,0.5) 0%, transparent 100%),
+      radial-gradient(1px 1px at 50% 60%, rgba(255,255,255,0.4) 0%, transparent 100%),
+      radial-gradient(1px 1px at 10% 80%, rgba(255,255,255,0.3) 0%, transparent 100%),
+      radial-gradient(1px 1px at 70% 50%, rgba(255,255,255,0.5) 0%, transparent 100%),
+      radial-gradient(1px 1px at 35% 15%, rgba(255,255,255,0.6) 0%, transparent 100%),
+      radial-gradient(1px 1px at 90% 70%, rgba(255,255,255,0.4) 0%, transparent 100%),
+      radial-gradient(1px 1px at 60% 85%, rgba(255,255,255,0.3) 0%, transparent 100%),
+      radial-gradient(1px 1px at 15% 45%, rgba(255,255,255,0.5) 0%, transparent 100%),
+      radial-gradient(1px 1px at 45% 92%, rgba(255,255,255,0.4) 0%, transparent 100%);
+  }
+
+  .wrap {
+    position: relative; z-index: 1;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 40px 20px 60px;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 40px;
+    animation: fadeDown 0.6s ease;
+  }
+
+  .ufo-icon {
+    font-size: 48px;
+    display: block;
+    margin-bottom: 8px;
+    animation: hover 3s ease-in-out infinite;
+  }
+
+  @keyframes hover {
+    0%,100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  #title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 32px;
+    font-weight: 900;
+    letter-spacing: 4px;
+    transition: color 0.4s, text-shadow 0.4s;
+  }
+
+  #title.low  { color: var(--low);    text-shadow: 0 0 30px var(--low), 0 0 60px rgba(0,255,136,0.3); }
+  #title.speed { color: var(--speed); text-shadow: 0 0 30px var(--speed), 0 0 60px rgba(0,204,255,0.3); }
+  #title.danger { color: var(--danger); text-shadow: 0 0 30px var(--danger), 0 0 60px rgba(255,0,51,0.3); }
+
+  .subtitle {
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: rgba(255,255,255,0.3);
+    margin-top: 6px;
+    text-transform: uppercase;
+  }
+
+  /* Plans */
+  .plans {
+    display: grid;
+    grid-template-columns: repeat(3,1fr);
+    gap: 10px;
+    margin-bottom: 28px;
+    animation: fadeUp 0.6s 0.1s both;
+  }
+
+  .plan {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .plan::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 0.3s;
+    border-radius: 12px;
+  }
+
+  .plan.free::before  { background: radial-gradient(circle at 50% 0%, rgba(0,255,136,0.12), transparent 70%); }
+  .plan.speed::before { background: radial-gradient(circle at 50% 0%, rgba(0,204,255,0.12), transparent 70%); }
+  .plan.danger::before{ background: radial-gradient(circle at 50% 0%, rgba(255,0,51,0.12), transparent 70%); }
+
+  .plan:hover::before, .plan.active::before { opacity: 1; }
+
+  .plan.free.active   { border-color: var(--low);    box-shadow: 0 0 20px rgba(0,255,136,0.2); }
+  .plan.speed.active  { border-color: var(--speed);  box-shadow: 0 0 20px rgba(0,204,255,0.2); }
+  .plan.danger.active { border-color: var(--danger); box-shadow: 0 0 20px rgba(255,0,51,0.2); }
+
+  .plan-icon { font-size: 22px; margin-bottom: 6px; }
+  .plan-name { font-family: 'Orbitron', sans-serif; font-size: 9px; letter-spacing: 2px; margin-bottom: 4px; }
+  .plan.free .plan-name { color: var(--low); }
+  .plan.speed .plan-name { color: var(--speed); }
+  .plan.danger .plan-name { color: var(--danger); }
+  .plan-price { font-size: 13px; font-weight: bold; margin-bottom: 2px; }
+  .plan-duration { font-size: 10px; color: rgba(255,255,255,0.4); }
+  .plan-badge {
+    position: absolute; top: 6px; right: 6px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 7px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    letter-spacing: 1px;
+    font-family: 'Orbitron', sans-serif;
+  }
+
+  /* Card */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 16px;
+    animation: fadeUp 0.6s 0.2s both;
+  }
+
+  .card-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: rgba(255,255,255,0.3);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  /* Divider */
+  .divider {
+    display: flex; align-items: center; gap: 10px;
+    margin: 14px 0;
+    color: rgba(255,255,255,0.2);
+    font-size: 10px;
+    letter-spacing: 2px;
+  }
+  .divider::before, .divider::after {
+    content: ''; flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Input */
+  .input-wrap { position: relative; margin-bottom: 12px; }
+  .input-wrap label { display: block; font-size: 10px; letter-spacing: 1px; color: rgba(255,255,255,0.4); margin-bottom: 6px; }
+  .inp {
+    width: 100%;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: #fff;
+    padding: 11px 14px;
+    font-size: 13px;
+    font-family: 'Share Tech Mono', monospace;
+    transition: border-color 0.3s;
+    outline: none;
+  }
+  .inp:focus { border-color: rgba(255,255,255,0.25); }
+  .inp::placeholder { color: rgba(255,255,255,0.2); }
+
+  /* QR section */
+  .qr-section { display: none; }
+  .qr-section.show { display: block; }
+
+  .qr-box {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .qr-box img {
+    width: 180px; height: 180px;
+    border-radius: 8px;
+  }
+
+  .qr-info { text-align: center; }
+  .qr-bank { font-size: 11px; color: #333; font-family: 'Share Tech Mono', monospace; }
+  .qr-amount { font-size: 20px; font-weight: bold; color: #111; font-family: 'Orbitron', sans-serif; }
+  .qr-note { font-size: 10px; color: #555; }
+
+  .copy-row {
+    display: grid; grid-template-columns: 1fr auto;
+    gap: 8px; margin-bottom: 8px;
+  }
+  .copy-val {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.7);
+    font-family: 'Share Tech Mono', monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .btn-copy {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: rgba(255,255,255,0.5);
+    padding: 0 14px;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: 'Share Tech Mono', monospace;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .btn-copy:hover { background: rgba(255,255,255,0.1); color: #fff; }
+  .btn-copy.copied { color: var(--low); border-color: var(--low); }
+
+  .timer-row {
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(255,204,0,0.07);
+    border: 1px solid rgba(255,204,0,0.15);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+  }
+  .timer-label { font-size: 10px; letter-spacing: 1px; color: rgba(255,204,0,0.7); }
+  #timer { font-family: 'Orbitron', sans-serif; font-size: 16px; color: #ffcc00; }
+
+  /* Confirm button */
+  .btn-main {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 10px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-main.green  { background: linear-gradient(135deg, #00c96b, #00ff88); color: #001a0e; }
+  .btn-main.blue   { background: linear-gradient(135deg, #0099cc, #00ccff); color: #001520; }
+  .btn-main.red    { background: linear-gradient(135deg, #cc0022, #ff0033); color: #1a0008; }
+
+  .btn-main:hover  { transform: translateY(-2px); filter: brightness(1.1); }
+  .btn-main:active { transform: translateY(0); }
+
+  .btn-main::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+    transform: translateX(-100%);
+    transition: transform 0.5s;
+  }
+  .btn-main:hover::after { transform: translateX(100%); }
+
+  /* Key display */
+  #key-result { display: none; }
+  #key-result.show { display: block; }
+
+  .key-card {
+    background: rgba(0,255,136,0.04);
+    border: 1px solid rgba(0,255,136,0.2);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .key-card.speed-key { background: rgba(0,204,255,0.04); border-color: rgba(0,204,255,0.2); }
+  .key-card.danger-key { background: rgba(255,0,51,0.04); border-color: rgba(255,0,51,0.2); }
+
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 rgba(0,255,136,0); }
+    50% { box-shadow: 0 0 20px rgba(0,255,136,0.15); }
+  }
+
+  .key-card.speed-key { animation-name: pulseSpeed; }
+  @keyframes pulseSpeed {
+    0%,100% { box-shadow: 0 0 0 rgba(0,204,255,0); }
+    50% { box-shadow: 0 0 20px rgba(0,204,255,0.15); }
+  }
+
+  .key-label { font-size: 10px; letter-spacing: 2px; color: rgba(255,255,255,0.3); margin-bottom: 10px; }
+  .key-value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 15px;
+    letter-spacing: 2px;
+    word-break: break-all;
+    margin-bottom: 8px;
+  }
+  .key-card.key-free .key-value { color: var(--low); }
+  .key-card.speed-key .key-value { color: var(--speed); }
+  .key-card.danger-key .key-value { color: var(--danger); }
+
+  .key-expire { font-size: 11px; color: rgba(255,255,255,0.4); margin-bottom: 14px; }
+
+  .btn-copy-key {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: rgba(255,255,255,0.5);
+    padding: 8px 18px;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: 'Share Tech Mono', monospace;
+    transition: all 0.2s;
+  }
+  .btn-copy-key:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+  /* Notice */
+  .notice {
+    font-size: 11px;
+    color: rgba(255,255,255,0.25);
+    text-align: center;
+    line-height: 1.7;
+    padding: 0 10px;
+    animation: fadeUp 0.6s 0.4s both;
+  }
+  .notice a { color: rgba(255,255,255,0.4); text-decoration: none; }
+  .notice a:hover { color: #fff; }
+
+  /* Toast */
+  #toast {
+    position: fixed;
+    bottom: 30px; left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: rgba(30,30,40,0.95);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 22px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.85);
+    backdrop-filter: blur(10px);
+    transition: transform 0.35s cubic-bezier(.34,1.56,.64,1);
+    z-index: 999;
+    white-space: nowrap;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* Status badge */
+  .status-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--low);
+    box-shadow: 0 0 8px var(--low);
+    margin-right: 6px;
+    animation: blink 1.5s ease-in-out infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  @keyframes fadeDown { from { opacity:0; transform: translateY(-20px); } to { opacity:1; transform: translateY(0); } }
+  @keyframes fadeUp   { from { opacity:0; transform: translateY(20px);  } to { opacity:1; transform: translateY(0); } }
+
+  /* Error */
+  .err-msg { font-size: 11px; color: var(--danger); margin-top: 6px; display: none; }
+  .err-msg.show { display: block; }
+
+  .step-indicator {
+    display: flex; justify-content: center; gap: 6px; margin-bottom: 20px;
+    animation: fadeUp 0.6s 0.15s both;
+  }
+  .step {
+    width: 28px; height: 4px; border-radius: 2px;
+    background: rgba(255,255,255,0.1);
+    transition: background 0.3s;
+  }
+  .step.active { background: rgba(255,255,255,0.5); }
+  .step.done   { background: var(--low); }
+</style>
+</head>
+<body>
+<div id="stars"></div>
+
+<div class="wrap">
+
+  <!-- Header -->
+  <div class="header">
+    <span class="ufo-icon">🛸</span>
+    <div id="title" class="low">UFO SPEED</div>
+    <div class="subtitle"><span class="status-dot"></span>Hệ Thống Key Chính Thức</div>
+  </div>
+
+  <!-- Steps -->
+  <div class="step-indicator">
+    <div class="step active" id="s1"></div>
+    <div class="step" id="s2"></div>
+    <div class="step" id="s3"></div>
+  </div>
+
+  <!-- Plans -->
+  <div class="plans">
+    <div class="plan free active" onclick="selectPlan('free')">
+      <div class="plan-icon">🟢</div>
+      <div class="plan-name">FREE</div>
+      <div class="plan-price">Miễn Phí</div>
+      <div class="plan-duration">1 ngày</div>
+    </div>
+    <div class="plan speed" onclick="selectPlan('speed')">
+      <div class="plan-icon">⚡</div>
+      <div class="plan-name">SPEED</div>
+      <div class="plan-price">20,000đ</div>
+      <div class="plan-duration">7 ngày</div>
+    </div>
+    <div class="plan danger" onclick="selectPlan('danger')">
+      <div class="plan-badge">HOT</div>
+      <div class="plan-icon">🔥</div>
+      <div class="plan-name">DANGER</div>
+      <div class="plan-price">100,000đ</div>
+      <div class="plan-duration">30 ngày</div>
+    </div>
+  </div>
+
+  <!-- Step 1: Info -->
+  <div class="card" id="step-info">
+    <div class="card-label">// Thông Tin Người Dùng</div>
+
+    <div class="input-wrap">
+      <label>TÊN / NICKNAME</label>
+      <input class="inp" id="inp-name" placeholder="VD: xXDarkHunterXx" maxlength="30">
+    </div>
+
+    <div class="input-wrap">
+      <label>SỐ ĐIỆN THOẠI (nhận xác nhận)</label>
+      <input class="inp" id="inp-phone" placeholder="09xxxxxxxx" maxlength="15" type="tel">
+      <div class="err-msg" id="err-phone">Số điện thoại không hợp lệ</div>
+    </div>
+
+    <button class="btn-main green" id="btn-next" onclick="goToPayment()">
+      TIẾP THEO →
+    </button>
+  </div>
+
+  <!-- Step 2: Payment -->
+  <div class="card" id="step-pay" style="display:none">
+    <div class="card-label">// Thanh Toán</div>
+
+    <!-- Free plan: no payment -->
+    <div id="free-info" style="display:none">
+      <div style="text-align:center; padding: 10px 0 18px;">
+        <div style="font-size:36px; margin-bottom:8px;">🎁</div>
+        <div style="font-family:'Orbitron',sans-serif; font-size:13px; color:var(--low); margin-bottom:6px;">KEY MIỄN PHÍ — 1 NGÀY</div>
+        <div style="font-size:11px; color:rgba(255,255,255,0.4);">Mỗi tài khoản nhận được 1 key/ngày</div>
+      </div>
+      <button class="btn-main green" onclick="generateKey()">NHẬN KEY NGAY</button>
+    </div>
+
+    <!-- Paid plans: bank QR -->
+    <div id="paid-info" style="display:none">
+
+      <div class="qr-box">
+        <!-- QR code via QR server API with bank info pre-filled -->
+        <img id="qr-img" src="" alt="QR Thanh Toán">
+        <div class="qr-info">
+          <div class="qr-bank">MB Bank • 1234567890</div>
+          <div class="qr-amount" id="qr-amount">20,000đ</div>
+          <div class="qr-note" id="qr-note">Nội dung: UFO-SPEED-...</div>
+        </div>
+      </div>
+
+      <div class="card-label">// Chuyển Khoản Thủ Công</div>
+
+      <div class="copy-row">
+        <div class="copy-val">MB Bank</div>
+        <button class="btn-copy" onclick="copyText('MB Bank', this)">COPY</button>
+      </div>
+      <div class="copy-row">
+        <div class="copy-val">1234567890</div>
+        <button class="btn-copy" onclick="copyText('1234567890', this)">COPY</button>
+      </div>
+      <div class="copy-row">
+        <div class="copy-val" id="transfer-note">UFO-SPEED-...</div>
+        <button class="btn-copy" onclick="copyText(document.getElementById('transfer-note').textContent, this)">COPY</button>
+      </div>
+      <div class="copy-row">
+        <div class="copy-val" id="transfer-amount">20000</div>
+        <button class="btn-copy" onclick="copyText(document.getElementById('transfer-amount').textContent, this)">COPY</button>
+      </div>
+
+      <div class="divider">SAU KHI CHUYỂN</div>
+
+      <div class="timer-row">
+        <span class="timer-label">⏱ HẾT HẠN XÁC NHẬN</span>
+        <span id="timer">15:00</span>
+      </div>
+
+      <button class="btn-main blue" id="btn-confirm" onclick="confirmPayment()">
+        ĐÃ CHUYỂN KHOẢN — XÁC NHẬN
+      </button>
+
+    </div>
+  </div>
+
+  <!-- Step 3: Key result -->
+  <div id="key-result">
+    <div class="key-card key-free" id="key-card">
+      <div class="key-label">// KEY CỦA BẠN</div>
+      <div class="key-value" id="key-val">UFO-XXXX-XXXX</div>
+      <div class="key-expire" id="key-exp">HSD: --/--/----</div>
+      <button class="btn-copy-key" onclick="copyKey()">📋 SAO CHÉP KEY</button>
+    </div>
+    <br>
+    <div class="notice">
+      ⚠️ Lưu key cẩn thận — hệ thống không lưu lại sau khi tắt<br>
+      Cần hỗ trợ? Liên hệ <a href="#">@UFOSupport</a>
+    </div>
+  </div>
+
+  <!-- Bottom notice -->
+  <div class="notice" style="margin-top:20px" id="bottom-notice">
+    Sau khi chuyển khoản, nhấn xác nhận để nhận key tự động<br>
+    Hỗ trợ 24/7 · <a href="#">Telegram</a> · <a href="#">Facebook</a>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div id="toast">✓ Đã sao chép!</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────
+let currentPlan = 'free';
+let currentStep = 1;
+let timerInterval = null;
+let timerSeconds = 900;
+let txRef = '';
+let userName = '';
+let userPhone = '';
+
+const PLANS = {
+  free:   { name: 'UFO LOW',    price: 0,      days: 1,  label: 'FREE',   color: 'green', cls: 'key-free',   titleClass: 'low' },
+  speed:  { name: 'UFO SPEED',  price: 20000,  days: 7,  label: 'SPEED',  color: 'blue',  cls: 'speed-key',  titleClass: 'speed' },
+  danger: { name: 'UFO DANGER', price: 100000, days: 30, label: 'DANGER', color: 'red',   cls: 'danger-key', titleClass: 'danger' }
+};
+
+// ─── Plan Selection ───────────────────────────────────────────────────
+function selectPlan(plan) {
+  currentPlan = plan;
+  document.querySelectorAll('.plan').forEach(p => p.classList.remove('active'));
+  document.querySelector('.plan.'+plan).classList.add('active');
+  const t = PLANS[plan];
+  const titleEl = document.getElementById('title');
+  titleEl.textContent = t.name;
+  titleEl.className = t.titleClass;
+}
+
+// ─── Step 1 → 2 ───────────────────────────────────────────────────────
+function goToPayment() {
+  userName  = document.getElementById('inp-name').value.trim();
+  userPhone = document.getElementById('inp-phone').value.trim();
+
+  const errEl = document.getElementById('err-phone');
+
+  if (!userName) { showToast('⚠️ Nhập tên trước đã!'); return; }
+
+  if (currentPlan !== 'free') {
+    if (!/^(0|\+84)[0-9]{8,10}$/.test(userPhone)) {
+      errEl.classList.add('show');
+      return;
+    }
+  }
+  errEl.classList.remove('show');
+
+  // Free daily check
+  if (currentPlan === 'free') {
+    const last = localStorage.getItem('_ufo_free_ts');
+    if (last && Date.now() - Number(last) < 86400000) {
+      showToast('❌ Bạn đã nhận key miễn phí hôm nay!');
+      return;
+    }
+  }
+
+  document.getElementById('step-info').style.display = 'none';
+  document.getElementById('step-pay').style.display  = 'block';
+  setStep(2);
+
+  if (currentPlan === 'free') {
+    document.getElementById('free-info').style.display  = 'block';
+    document.getElementById('paid-info').style.display  = 'none';
+  } else {
+    document.getElementById('free-info').style.display  = 'none';
+    document.getElementById(
