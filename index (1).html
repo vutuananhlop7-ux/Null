@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>V7.1 FIX ENGINE</title>
+</head>
+
+<body style="background:#000;color:#0f0;font-family:monospace">
+
+<textarea id="input" style="width:100%;height:100px"></textarea>
+<button onclick="run()">RUN</button>
+
+<pre id="out"></pre>
+
+<script>
+
+// =====================
+// TOKEN
+// =====================
+function tokenize(t){
+ return t.toLowerCase().split(/\s+/)
+}
+
+// =====================
+// AST SAFE
+// =====================
+function buildAST(tokens){
+
+ let ast = {
+  entity:null,
+  actions:[],
+  params:[],
+  raw:tokens.join(" ")
+ }
+
+ for(let t of tokens){
+
+  if(["bắn","súng","weapon"].includes(t)){
+   ast.entity = "weapon"
+  }
+
+  if(["đi","player","nhân"].includes(t)){
+   ast.entity = "player"
+  }
+
+  if(t.includes("xuyên")){
+   if(!ast.actions.includes("noclip"))
+    ast.actions.push("noclip")
+  }
+
+  if(t.includes("damage")){
+   if(!ast.actions.includes("damage"))
+    ast.actions.push("damage")
+  }
+
+  let n = Number(t)
+  if(!isNaN(n)) ast.params.push(n)
+ }
+
+ return ast
+}
+
+// =====================
+// PLAN SAFE
+// =====================
+function plan(ast){
+
+ let p = []
+
+ if(ast.entity === "player"){
+  p.push("CLIENT_CHAR")
+  if(ast.actions.includes("noclip")) p.push("CLIENT_NOCLIP")
+ }
+
+ if(ast.entity === "weapon"){
+  p.push("SERVER_TOOL")
+
+  if(ast.actions.includes("damage"))
+   p.push("SERVER_DAMAGE")
+
+  if(ast.actions.includes("noclip"))
+   p.push("SERVER_PENETRATION")
+ }
+
+ return p
+}
+
+// =====================
+// MODULE SAFE
+// =====================
+const MODULES = {
+
+CLIENT_CHAR: () => `
+local char = script.Parent
+`,
+
+CLIENT_NOCLIP: () => `
+for _,v in pairs(char:GetDescendants()) do
+ if v:IsA("BasePart") then
+  v.CanCollide = false
+ end
+end
+`,
+
+SERVER_TOOL: () => `
+local tool = script.Parent
+
+tool.Activated:Connect(function()
+
+ local bullet = Instance.new("Part")
+ bullet.Size = Vector3.new(0.2,0.2,2)
+ bullet.CFrame = tool.Handle.CFrame
+ bullet.Parent = workspace
+`,
+
+SERVER_DAMAGE: () => `
+bullet.Touched:Connect(function(hit)
+ local hum = hit.Parent and hit.Parent:FindFirstChild("Humanoid")
+ if hum then
+  hum:TakeDamage(25)
+ end
+end)
+`,
+
+SERVER_PENETRATION: () => `
+bullet.CanCollide = false
+`
+}
+
+// =====================
+// GENERATOR SAFE
+// =====================
+function generate(plan){
+
+ let server = ""
+ let client = ""
+
+ let inTool = false
+
+ for(let p of plan){
+
+  let mod = MODULES[p]
+
+  if(!mod) continue
+
+  let code = mod()
+
+  if(p.startsWith("CLIENT")){
+   client += code + "\n"
+  }
+
+  if(p.startsWith("SERVER")){
+   server += code + "\n"
+  }
+
+ }
+
+ if(server.includes("tool.Activated")){
+  server += "\nend)"
+ }
+
+ return {server, client}
+}
+
+// =====================
+// RUN
+// =====================
+function run(){
+
+ let text = document.getElementById("input").value
+
+ let tokens = tokenize(text)
+ let ast = buildAST(tokens)
+ let plan = plan(ast)
+ let out = generate(plan)
+
+ document.getElementById("out").innerText =
+ "=== AST ===\n" + JSON.stringify(ast,null,2) +
+ "\n\n=== PLAN ===\n" + JSON.stringify(plan,null,2) +
+ "\n\n=== SERVER ===\n" + out.server +
+ "\n\n=== CLIENT ===\n" + out.client
+}
+
+</script>
+
+</body>
+</html>
