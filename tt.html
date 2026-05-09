@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Heart Particles & Fireworks</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #050505;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #text-container {
+            position: absolute;
+            color: #ff69b4;
+            font-family: 'Verdana', sans-serif;
+            font-size: 45px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            z-index: 20;
+            opacity: 0;
+            filter: blur(10px);
+            transition: all 3s ease-in-out;
+            text-shadow: 0 0 20px #ff1493, 0 0 40px #ff69b4;
+            pointer-events: none;
+        }
+        #text-container.show {
+            opacity: 1;
+            filter: blur(0px);
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="text-container">I Love You</div>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const textElement = document.getElementById('text-container');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const particles = [];
+        const fireworks = [];
+        const heartPoints = [];
+        const particleCount = 800;
+
+        // 1. Tạo tọa độ hình trái tim
+        function initHeart() {
+            for (let i = 0; i < particleCount; i++) {
+                let t = Math.random() * Math.PI * 2;
+                let x = 16 * Math.pow(Math.sin(t), 3);
+                let y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+                heartPoints.push({ x: x * 15, y: y * 15 });
+            }
+        }
+
+        // 2. Lớp Hạt (Particles) tạo trái tim
+        class Particle {
+            constructor(targetX, targetY) {
+                // Bay đến từ các phía ngẫu nhiên ngoài màn hình
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() > 0.5 ? -10 : canvas.height + 10;
+                if(Math.random() > 0.5) {
+                    this.x = Math.random() > 0.5 ? -10 : canvas.width + 10;
+                    this.y = Math.random() * canvas.height;
+                }
+
+                this.targetX = targetX;
+                this.targetY = targetY;
+                this.size = Math.random() * 2 + 1;
+                this.speed = Math.random() * 0.02 + 0.01;
+                this.friction = 0.95;
+                this.color = `hsla(${340 + Math.random() * 30}, 100%, 70%, ${Math.random()})`;
+            }
+
+            draw() {
+                const beat = 1 + 0.1 * Math.sin(Date.now() * 0.005);
+                const tx = (canvas.width / 2) + this.targetX * beat;
+                const ty = (canvas.height / 2) + this.targetY * beat;
+
+                this.x += (tx - this.x) * this.speed;
+                this.y += (ty - this.y) * this.speed;
+
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // 3. Lớp Pháo hoa (Fireworks)
+        class Firework {
+            constructor() {
+                this.x = Math.random() * canvas.width;
+                this.y = canvas.height;
+                this.targetY = Math.random() * (canvas.height / 2);
+                this.speed = Math.random() * 3 + 2;
+                this.particles = [];
+                this.exploded = false;
+            }
+
+            update() {
+                if (!this.exploded) {
+                    this.y -= this.speed;
+                    if (this.y <= this.targetY) {
+                        this.exploded = true;
+                        this.explode();
+                    }
+                }
+                this.particles.forEach((p, i) => {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.vy += 0.05; // gravity
+                    p.alpha -= 0.01;
+                    if (p.alpha <= 0) this.particles.splice(i, 1);
+                });
+            }
+
+            explode() {
+                for (let i = 0; i < 30; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = Math.random() * 4 + 1;
+                    this.particles.push({
+                        x: this.x,
+                        y: this.y,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        alpha: 1,
+                        color: `hsla(${Math.random() * 360}, 100%, 50%, 1)`
+                    });
+                }
+            }
+
+            draw() {
+                if (!this.exploded) {
+                    ctx.fillStyle = "white";
+                    ctx.fillRect(this.x, this.y, 2, 5);
+                }
+                this.particles.forEach(p => {
+                    ctx.globalAlpha = p.alpha;
+                    ctx.fillStyle = p.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        // Khởi tạo
+        initHeart();
+        heartPoints.forEach(pt => particles.push(new Particle(pt.x, pt.y)));
+
+        // Xuất hiện chữ sau 2 giây
+        setTimeout(() => {
+            textElement.classList.add('show');
+        }, 2000);
+
+        function animate() {
+            ctx.fillStyle = 'rgba(5, 5, 5, 0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            particles.forEach(p => p.draw());
+
+            if (Math.random() < 0.03) fireworks.push(new Firework());
+            fireworks.forEach((fw, i) => {
+                fw.update();
+                fw.draw();
+                if (fw.exploded && fw.particles.length === 0) fireworks.splice(i, 1);
+            });
+
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+    </script>
+</body>
+</html>
