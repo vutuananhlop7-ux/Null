@@ -514,3 +514,355 @@ end)
 keyClose.MouseButton1Click:Connect(function() keyFrame.Visible = false; mini.Visible = true end)
 mini.MouseButton1Click:Connect(function() mini.Visible = false; main.Visible = keyVerified; keyFrame.Visible = not keyVerified; blur.Enabled = keyVerified end)
 close.MouseButton1Click:Connect(function() main.Visible = false; mini.Visible = true; blur.Enabled = false end)
+--===================================================================================
+-- 🛑 PHẦN CODE BỔ SUNG KHÔNG ĐỤNG CHẠM PHẦN TRƯỚC (PASTE XUỐNG DƯỚI CÙNG SCRIPT V3.2)
+--===================================================================================
+task.spawn(function()
+	-- Đợi cho đến khi cấu trúc cốt lõi của Rose Hub v3.2 đã khởi chạy hoàn chỉnh
+	repeat task.wait(0.5) until keyVerified and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	
+	notify("🔥 Đã kích hoạt gói bổ sung A.I God Mode Extension!")
+
+	-- [BỔ SUNG 1] HIỆU ỨNG VÒNG TRÒN FOV CHUYỂN ĐỘNG THEO TRẠNG THÁI CHIẾN ĐẤU
+	task.spawn(function()
+		while task.wait(0.01) do
+			if fovCircle and fovCircle.Visible then
+				-- Nếu đang bật Auto Shoot, vòng tròn FOV sẽ tự động co giãn và đổi màu Neon theo nhịp bắn
+				if autoShootEnabled and aiCooldown["AutoShoot"] then
+					fovCircle.Radius = math.clamp(aimbotFOV + math.sin(tick() * 30) * 10, aimbotFOV - 10, aimbotFOV + 15)
+					fovCircle.Color = Color3.fromRGB(255, 0, 100) -- Đổi sang hồng cảnh báo khi đang xả đạn
+					fovCircle.Thickness = 2.5
+				else
+					fovCircle.Radius = aimbotFOV
+					fovCircle.Color = Color3.fromRGB(0, 255, 204) -- Trở về màu xanh Cyan nguyên bản
+					fovCircle.Thickness = 1.5
+				end
+			end
+		end
+	end)
+
+	-- [BỔ SUNG 2] TỰ ĐỘNG PARRY / NÉ CHIÊU PHẢN XẠ (AUTO EVADE) CHO BẢN THÂN
+	-- Khi AI phát hiện mối nguy hiểm ở mức "HIGH", tự động kích hoạt phím nhảy/phím kỹ năng để né đòn
+	task.spawn(function()
+		while task.wait(0.1) do
+			if aiRunning then
+				local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+				if myRoot then
+					for _, plr in ipairs(Players:GetPlayers()) do
+						if plr ~= player and plr.Character and plr.Character:FindFirstChild("Head") then
+							local root = plr.Character:FindFirstChild("HumanoidRootPart")
+							local head = plr.Character.Head
+							if root then
+								local dist = (myRoot.Position - root.Position).Magnitude
+								local isLookingAtMe = head.CFrame.LookVector:Dot((myRoot.Position - head.Position).Unit) > 0.8
+								
+								-- Nếu địch tiến quá gần dưới 12 mét và đang nhìn thẳng vào bạn (Chuẩn bị tung chiêu)
+								if dist < 12 and isLookingAtMe then
+									-- Tự động búng người ra sau để né chiêu (Auto Evade Backstep)
+									local hum = player.Character:FindFirstChildOfClass("Humanoid")
+									if hum and hum:GetState() ~= Enum.HumanoidStateType.Jumping then
+										myRoot.AssemblyLinearVelocity = (myRoot.CFrame.LookVector * -45) + Vector3.new(0, 30, 0)
+										notify("🛡️ AI REFLEX: Đã tự động kích hoạt Né Tránh Phản Xạ!")
+										task.wait(1.5) -- Cooldown né tránh để tránh giật lag vật lý
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end)
+
+	-- [BỔ SUNG 3] CHẾ ĐỘ GIẢM ĐỒ HỌA SIÊU CẤP ĐỂ GÁNH AIMBOT (FPS BOOSTER)
+	-- Giúp thuật toán khóa mục tiêu và tự bắn mượt mà hơn trên máy yếu
+	local function boostFPS()
+		for _, v in ipairs(Lighting:GetDescendants()) do
+			if v:IsA("PostEffect") or v:IsA("GlobalShadows") then v.Enabled = false end
+		end
+		settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+		notify("⚡ Thần tốc: Đã tối ưu hóa đồ họa môi trường để gánh Aimbot!")
+	end
+	
+	-- Tự động kích hoạt tối ưu hóa FPS khi người dùng mở Menu chính
+	if main then
+		main:GetPropertyChangedSignal("Visible"):Connect(function()
+			if main.Visible then boostFPS() end
+		end)
+	end
+end)
+--===================================================================================
+-- 🎥 PHẦN CODE BỔ SUNG TAB CAMERA (PASTE XUỐNG DƯỚI CÙNG SCRIPT)
+--===================================================================================
+task.spawn(function()
+	-- Đợi giao diện chính v3.2 khởi tạo xong hoàn toàn
+	repeat task.wait(0.5) until main and sidebar and content
+
+	-- Biến lưu trữ trạng thái Spectate độc lập
+	local camSpectating = nil
+
+	-- Hàm Spectate độc lập
+	local function aiSpectate(targetPlr)
+		camSpectating = targetPlr
+		if targetPlr and targetPlr.Character and targetPlr.Character:FindFirstChildOfClass("Humanoid") then
+			camera.CameraType = Enum.CameraType.Custom
+			camera.CameraSubject = targetPlr.Character:FindFirstChildOfClass("Humanoid")
+			notify("👁️ Đang quan sát: " .. targetPlr.Name)
+		end
+	end
+
+	-- Hàm hủy Spectate
+	local function aiReturnToSelf()
+		camSpectating = nil
+		if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+			camera.CameraSubject = player.Character:FindFirstChildOfClass("Humanoid")
+			notify("🔙 Đã quay lại góc nhìn bản thân")
+		end
+	end
+
+	-- Cài đặt tự động bám Camera nếu mục tiêu bị chết rồi hồi sinh lại
+	RunService.RenderStepped:Connect(function()
+		if camSpectating then
+			if camSpectating.Character and camSpectating.Character:FindFirstChildOfClass("Humanoid") then
+				if camera.CameraSubject ~= camSpectating.Character:FindFirstChildOfClass("Humanoid") then
+					camera.CameraSubject = camSpectating.Character:FindFirstChildOfClass("Humanoid")
+				end
+			end
+		end
+	end)
+
+	-- TẠO NÚT "CAMERA" TRÊN THANH SIDEBAR
+	local camTabBtn = Instance.new("TextButton", sidebar)
+	camTabBtn.Name = "CameraTabButton"
+	camTabBtn.Size = UDim2.new(1, 0, 0, 38)
+	camTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+	camTabBtn.Text = "Camera 🎥"
+	camTabBtn.TextColor3 = Theme.TextMuted
+	camTabBtn.Font = Enum.Font.GothamBold
+	camTabBtn.TextSize = 13
+	roundCorners(camTabBtn, 4)
+
+	-- LOGIC KHI BẤM VÀO TAB CAMERA
+	camTabBtn.MouseButton1Click:Connect(function()
+		-- Đổi màu chữ tất cả các nút khác thành Muted để làm nổi bật Tab này
+		for _, child in ipairs(sidebar:GetChildren()) do
+			if child:IsA("TextButton") then child.TextColor3 = Theme.TextMuted end
+		end
+		camTabBtn.TextColor3 = Theme.Accent
+
+		-- Xóa sạch nội dung cũ đang hiển thị ở khung Content
+		for _, child in ipairs(content:GetChildren()) do
+			if not child:IsA("UIComponent") then child:Destroy() end
+		end
+
+		-- 1. Nút quay về bản thân (Return Button)
+		local backBtn = Instance.new("TextButton", content)
+		backBtn.Size = UDim2.new(1, 0, 0, 35)
+		backBtn.Text = "🔙 Quay về bản thân"
+		backBtn.BackgroundColor3 = Theme.Accent
+		backBtn.TextColor3 = Theme.Sidebar
+		backBtn.Font = Enum.Font.GothamBold
+		roundCorners(backBtn, 6)
+		backBtn.MouseButton1Click:Connect(aiReturnToSelf)
+
+		-- 2. Khung cuộn danh sách người chơi (Scrolling List)
+		local camScroll = Instance.new("ScrollingFrame", content)
+		camScroll.Size = UDim2.new(1, 0, 1, -45)
+		camScroll.BackgroundTransparency = 1
+		camScroll.ScrollBarThickness = 3
+		camScroll.ScrollBarImageColor3 = Theme.Accent
+		
+		local scrollLayout = Instance.new("UIListLayout", camScroll)
+		scrollLayout.Padding = UDim.new(0, 4)
+
+		-- Cập nhật danh sách người chơi thực tế trong Server vào khung cuộn
+		local function refreshCamList()
+			for _, child in ipairs(camScroll:GetChildren()) do
+				if child:IsA("TextButton") then child:Destroy() end
+			end
+
+			for _, plr in ipairs(Players:GetPlayers()) do
+				if plr ~= player then
+					local pBtn = Instance.new("TextButton", camScroll)
+					pBtn.Size = UDim2.new(1, -8, 0, 30)
+					pBtn.Text = "👁️  " .. plr.Name
+					pBtn.BackgroundColor3 = Theme.Sidebar
+					pBtn.TextColor3 = Theme.Text
+					pBtn.Font = Enum.Font.Gotham
+					pBtn.TextXAlignment = Enum.TextXAlignment.Left
+					roundCorners(pBtn, 4)
+					
+					-- Tạo khoảng trống nhỏ ở đầu chữ cho đẹp
+					pBtn.Text = "   👁️  " .. plr.DisplayName .. " (@" .. plr.Name .. ")"
+
+					pBtn.MouseButton1Click:Connect(function()
+						aiSpectate(plr)
+					end)
+				end
+			end
+			camScroll.CanvasSize = UDim2.new(0, 0, 0, #Players:GetPlayers() * 34)
+		end
+
+		-- Chạy làm mới danh sách lần đầu
+		refreshCamList()
+	end)
+end)
+--===================================================================================
+-- 🧠 ADVANCED COGNITIVE TACTICAL A.I ENGINE (PASTE XUỐNG DƯỚI CÙNG SCRIPT)
+--===================================================================================
+task.spawn(function()
+	-- Đợi cấu trúc nhân vật và hệ thống chính tải xong
+	repeat task.wait(0.5) until player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	notify("🎯 Đã nạp Module: A.I Phân Tích Hành Vi & Dự Báo Chiến Thuật!")
+
+	-- Hàm xác định hướng Compass (Đông, Tây, Nam, Bắc,...) từ bạn đến địch
+	local function getDirectionName(myRoot, targetRoot)
+		local relPos = (targetRoot.Position - myRoot.Position).Unit
+		local angle = math.atan2(relPos.X, relPos.Z) * (180 / math.pi)
+		if angle < 0 then angle = angle + 360 end
+		
+		if angle >= 337.5 or angle < 22.5 then return "Bắc (N)"
+		elseif angle >= 22.5 and angle < 67.5 then return "Đông Bắc (NE)"
+		elseif angle >= 67.5 and angle < 112.5 then return "Đông (E)"
+		elseif angle >= 112.5 and angle < 157.5 then return "Đông Nam (SE)"
+		elseif angle >= 157.5 and angle < 202.5 then return "Nam (S)"
+		elseif angle >= 202.5 and angle < 247.5 then return "Tây Nam (SW)"
+		elseif angle >= 247.5 and angle < 292.5 then return "Tây (W)"
+		elseif angle >= 292.5 and angle < 337.5 then return "Tây Bắc (NW)"
+		end
+		return "Không xác định"
+	end
+
+	-- Hàm phân tích hành vi ngầm của đối thủ
+	local function analyzeBehavior(char, hum, velocity)
+		if hum.Health <= 0 then return "ĐÃ CHẾT 💀", Color3.fromRGB(150,150,150) end
+		
+		-- Kiểm tra xem địch có đang cầm vũ khí (Tool) trên tay không
+		local isArmed = char:FindFirstChildOfClass("Tool") ~= nil
+		local speed = velocity.Magnitude
+
+		if speed < 1 then
+			return isArmed and "Thủ Thế (Đang cầm vũ khí) ⚔️" or "Đứng Yên 🧍", Color3.fromRGB(240, 240, 240)
+		elseif hum:GetState() == Enum.HumanoidStateType.Jumping or hum:GetState() == Enum.HumanoidStateType.FreeFall then
+			return "Đang Nhảy / Không kích 🪂", Color3.fromRGB(0, 180, 255)
+		elseif speed > 22 then
+			return "Đang Chạy Tốc Độ Cao 🏃‍♂️💨", Color3.fromRGB(255, 100, 0)
+		else
+			return isArmed and "Áp Sát Tấn Công ⚔️" or "Di Chuyển Thường 🏃", Color3.fromRGB(200, 200, 200)
+		end
+	end
+
+	-- Vòng lặp quét và vẽ đè bảng phân tích dữ liệu siêu cấp của AI lên ESP
+	RunService.RenderStepped:Connect(function()
+		if not aiRunning then return end
+		
+		local myChar = player.Character
+		local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+		if not myRoot then return end
+
+		for _, plr in ipairs(Players:GetPlayers()) do
+			if plr ~= player and plr.Character then
+				local char = plr.Character
+				local root = char:FindFirstChild("HumanoidRootPart")
+				local head = char:FindFirstChild("Head")
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				
+				if root and head and hum then
+					-- Đợi hoặc tìm BillboardGui của hệ thống ESP trước đó để chèn thông tin
+					local bill = head:FindFirstChildOfClass("BillboardGui")
+					if bill then
+						-- Thiết kế lại kích thước Billboard để chứa đủ bảng dữ liệu mới
+						bill.Size = UDim2.new(0, 220, 0, 110)
+						bill.ExtentsOffset = Vector3.new(0, 4.5, 0) -- Đẩy cao lên tránh che mặt
+
+						-- Tìm hoặc Tạo mới Khung HUD Phân Tích của AI
+						local aiHUD = bill:FindFirstChild("AdvancedAIHUD")
+						if not aiHUD then
+							aiHUD = Instance.new("Frame", bill)
+							aiHUD.Name = "AdvancedAIHUD"
+							aiHUD.Size = UDim2.new(1, 0, 1, 0)
+							aiHUD.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
+							aiHUD.BackgroundTransparency = 0.25
+							
+							local corner = Instance.new("UICorner", aiHUD)
+							corner.CornerRadius = UDim.new(0, 6)
+							local stroke = Instance.new("UIStroke", aiHUD)
+							stroke.Color = Theme.Accent
+							stroke.Thickness = 1
+							
+							local list = Instance.new("UIListLayout", aiHUD)
+							list.Padding = UDim.new(0, 1)
+							list.HorizontalAlignment = Enum.HorizontalAlignment.Left
+							
+							-- Tạo các dòng text mẫu bên trong HUD
+							for i = 1, 5 do
+								local line = Instance.new("TextLabel", aiHUD)
+								line.Name = "Line" .. i
+								line.Size = UDim2.new(1, -10, 0, 18)
+								line.Position = UDim2.new(0, 8, 0, 0)
+								line.BackgroundTransparency = 1
+								line.Font = Enum.Font.GothamBold
+								line.TextSize = 10
+								line.TextXAlignment = Enum.TextXAlignment.Left
+								line.TextColor3 = Color3.fromRGB(230, 230, 230)
+							end
+						end
+
+						-- Ẩn cái Tag cũ của AI (ở bản code trước) để tránh đè chữ
+						local oldTag = bill:FindFirstChild("AITag")
+						if oldTag then oldTag.Visible = false end
+
+						-- Ẩn cái TextLabel cũ của hệ thống ESP gốc để dồn dữ liệu vào HUD mới này
+						local oldTxt = bill:FindFirstChildOfClass("TextLabel")
+						if oldTxt and oldTxt.Name ~= "Line1" then oldTxt.TextTransparency = 1 end
+
+						-- LẤY CÁC THÔNG SỐ TOÁN HỌC & VẬT LÝ
+						local distance = (myRoot.Position - root.Position).Magnitude
+						local velocity = root.AssemblyLinearVelocity
+						local directionName = getDirectionName(myRoot, root)
+						
+						-- Phân tích hành vi & lấy màu hiển thị tương ứng
+						local behaviorText, behaviorColor = analyzeBehavior(char, hum, velocity)
+
+						-- Tính toán dự báo thời gian địch đến (ETA) dựa trên vận tốc hướng về phía bạn
+						local relVelocity = root.AssemblyLinearVelocity - myRoot.AssemblyLinearVelocity
+						local toMe = (myRoot.Position - root.Position).Unit
+						local closingSpeed = relVelocity:Dot(toMe) -- Vận tốc tiếp cận (Tốc độ thu hẹp khoảng cách)
+						
+						local etaText = "Đang đứng yên / Di chuyển xa dần"
+						if closingSpeed > 1 then
+							local etaTime = distance / closingSpeed
+							etaText = string.format("%.1f giây ⏳", etaTime)
+						end
+
+						-- Đánh giá khả năng địch có thể tấn công bạn không (Bao gồm khoảng cách và góc nhìn)
+						local isArmed = char:FindFirstChildOfClass("Tool") ~= nil
+						local isLookingAtMe = head.CFrame.LookVector:Dot((myRoot.Position - head.Position).Unit) > 0.7
+						local canAttack = "KHÔNG THỂ TRÚNG ✕"
+						local attackColor = Color3.fromRGB(0, 255, 100)
+
+						if distance <= 16 and isArmed then
+							canAttack = "CÓ THỂ CẬN CHIẾN! Đang cầm vũ khí ⚔️"
+							attackColor = Color3.fromRGB(255, 50, 50)
+						elseif distance > 16 and distance <= 120 and isArmed and isLookingAtMe then
+							canAttack = "NGUY HIỂM: Đang nhắm bắn bạn 🎯"
+							attackColor = Color3.fromRGB(255, 120, 0)
+						elseif not isArmed then
+							canAttack = "An Toàn (Địch không cầm vũ khí) ✔️"
+						end
+
+						-- CẬP NHẬT DỮ LIỆU LÊN BẢNG HIỂN THỊ HÌNH CHỮ NHẬT
+						aiHUD.Line1.Text = " 👤 MỤC TIÊU: " .. plr.Name .. " (" .. math.floor(distance) .. "m)"
+						aiHUD.Line2.Text = " 🧭 HƯỚNG ĐỊCH: " .. directionName
+						aiHUD.Line3.Text = " 🧠 HÀNH VI: " .. behaviorText
+						aiHUD.Line3.TextColor3 = behaviorColor
+						aiHUD.Line4.Text = " ⏱ DỰ BÁO TIẾP CẬN: " .. etaText
+						aiHUD.Line5.Text = " ⚡ KHẢ NĂNG TẤN CÔNG: " .. canAttack
+						aiHUD.Line5.TextColor3 = attackColor
+					end
+				end
+			end
+		end
+	end)
+end)
+--===================================================================================
