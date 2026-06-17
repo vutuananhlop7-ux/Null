@@ -1,0 +1,503 @@
+--// SERVICES
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+local CoreGui = game:GetService("CoreGui")
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+--// 🛡️ ANTI-DETECTION IDENTIFIERS
+local function generateRandomName()
+	local length = math.random(10, 16)
+	local array = {}
+	for i = 1, length do array[i] = string.char(math.random(97, 122)) end
+	return table.concat(array)
+end
+local SECURE_GUI_NAME = generateRandomName()
+
+--// SYSTEM STATES & TRACKING
+local VALID_KEY = "FREE_KEY"
+local PREMIUM_KEY = "PREMIUM_KEY"
+local keyVerified = false
+local premiumKeyValid = false
+
+local espEnabled = true
+local espSettings = {hitbox = false, health = true, distance = true, wall = true, highlight = true, name = true}
+
+local noclipEnabled = false
+local infJumpEnabled = false
+local flyEnabled = false
+local flySpeed = 40
+
+-- AUTO KILL TRACKING
+local autoKillEnabled = false
+local killAuraEnabled = false
+local killAuraRange = 22
+local totalKillsSession = 0
+local startTime = os.time()
+
+local espCache = {}
+local originalHitboxes = {}
+local aiRunning = false
+local aiConnection = nil
+local lastTarget = nil
+local targetStuckTimer = 0
+
+--// GUI CONTAINER
+local gui = Instance.new("ScreenGui")
+gui.Name = SECURE_GUI_NAME
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+--========================
+-- 🥀 MINI ICON (SMART TOUCH)
+--========================
+local mini = Instance.new("TextButton")
+mini.Size = UDim2.new(0, 60, 0, 60)
+mini.Position = UDim2.new(0, 15, 0.4, 0)
+mini.Text = "🥀"
+mini.TextSize = 26
+mini.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mini.BorderSizePixel = 0
+mini.Visible = false
+mini.Parent = gui
+
+local dragging, dragStart, startPos
+mini.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true dragStart = input.Position startPos = mini.Position
+		input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+	end
+end)
+UIS.InputChanged:Connect(function(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local delta = input.Position - dragStart
+		mini.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+
+--========================
+-- 📊 ANALYTICS DASHBOARD (BẢNG THEO DÕI TREO MÁY)
+--========================
+local dashFrame = Instance.new("Frame")
+dashFrame.Size = UDim2.new(0, 180, 0, 85)
+dashFrame.Position = UDim2.new(1, -195, 0, 45)
+dashFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+dashFrame.BackgroundTransparency = 0.2
+dashFrame.Visible = false
+dashFrame.Parent = gui
+
+local uicornerDash = Instance.new("UICorner", dashFrame)
+uicornerDash.CornerRadius = UDim.new(0, 6)
+
+local killLabel = Instance.new("TextLabel", dashFrame)
+killLabel.Size = UDim2.new(1, 0, 0.5, 0)
+killLabel.Text = "Kills Đã Đạt: 0"
+killLabel.TextColor3 = Color3.fromRGB(0, 255, 128)
+killLabel.Font = Enum.Font.SourceSansBold
+killLabel.TextSize = 14
+killLabel.BackgroundTransparency = 1
+
+local timeLabel = Instance.new("TextLabel", dashFrame)
+timeLabel.Size = UDim2.new(1, 0, 0.5, 0)
+timeLabel.Position = UDim2.new(0, 0, 0.5, 0)
+timeLabel.Text = "Thời gian chạy: 00:00"
+timeLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+timeLabel.Font = Enum.Font.SourceSans
+timeLabel.TextSize = 12
+timeLabel.BackgroundTransparency = 1
+
+task.spawn(function()
+	while true do
+		task.wait(1)
+		if keyVerified then
+			local elapsed = os.time() - startTime
+			local minutes = math.floor(elapsed / 60)
+			local seconds = elapsed % 60
+			timeLabel.Text = string.format("Thời gian chạy: %02d:%02d", minutes, seconds)
+		end
+	end
+end)
+
+--========================
+-- 🖥 MAIN UI (COMPACT & SMOOTH)
+--========================
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 460, 0, 250)
+main.Position = UDim2.new(0.5, -230, 0.5, -125)
+main.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
+main.Visible = false
+main.Parent = gui
+
+local mainCorner = Instance.new("UICorner", main)
+mainCorner.CornerRadius = UDim.new(0, 8)
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(0, 140, 0, 35)
+titleLabel.Text = "🥀 NOVA EVOLUTION"
+titleLabel.Font = Enum.Font.SourceSansBold
+titleLabel.TextSize = 14
+titleLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+titleLabel.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+titleLabel.Parent = main
+
+local close = Instance.new("TextButton")
+close.Size = UDim2.new(0, 30, 0, 30)
+close.Position = UDim2.new(1, -35, 0, 3)
+close.Text = "—"
+close.Font = Enum.Font.SourceSansBold
+close.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+close.TextColor3 = Color3.new(1, 1, 1)
+close.Parent = main
+Instance.new("UICorner", close).CornerRadius = UDim.new(0, 4)
+
+local sidebar = Instance.new("Frame")
+sidebar.Size = UDim2.new(0, 120, 1, -35)
+sidebar.Position = UDim2.new(0, 0, 0, 35)
+sidebar.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+sidebar.Parent = main
+
+local content = Instance.new("ScrollingFrame")
+content.Size = UDim2.new(1, -120, 1, -35)
+content.Position = UDim2.new(0, 120, 0, 35)
+content.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+content.CanvasSize = UDim2.new(0, 0, 0, 0)
+content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+content.ScrollBarThickness = 3
+content.Parent = main
+
+--========================
+-- 🔐 KEY UI
+--========================
+local keyFrame = Instance.new("Frame")
+keyFrame.Size = UDim2.new(0, 280, 0, 180)
+keyFrame.Position = UDim2.new(0.5, -140, 0.5, -90)
+keyFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+keyFrame.Parent = gui
+Instance.new("UICorner", keyFrame).CornerRadius = UDim.new(0, 6)
+
+local keyBox = Instance.new("TextBox")
+keyBox.Size = UDim2.new(0.85, 0, 0, 38)
+keyBox.Position = UDim2.new(0.075, 0, 0.25, 0)
+keyBox.PlaceholderText = "Nhập Key Hệ Thống..."
+keyBox.Text = ""
+keyBox.Parent = keyFrame
+
+local keyBtn = Instance.new("TextButton")
+keyBtn.Size = UDim2.new(0.85, 0, 0, 38)
+keyBtn.Position = UDim2.new(0.075, 0, 0.55, 0)
+keyBtn.Text = "Xác Thực Tối Ưu"
+keyBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+keyBtn.TextColor3 = Color3.new(1, 1, 1)
+keyBtn.Parent = keyFrame
+
+local keyClose = Instance.new("TextButton")
+keyClose.Size = UDim2.new(0, 25, 0, 25)
+keyClose.Position = UDim2.new(1, -30, 0, 5)
+keyClose.Text = "X"
+keyClose.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
+keyClose.TextColor3 = Color3.new(1, 1, 1)
+keyClose.Parent = keyFrame
+
+--========================
+-- 🎨 UI UTILS
+--========================
+local function createToggle(parent, name, stateKey, subKey, callback)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0.95, 0, 0, 36)
+	btn.Font = Enum.Font.SourceSansPro
+	btn.TextSize = 14
+	btn.TextColor3 = Color3.new(1, 1, 1)
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+
+	local function update()
+		local currentBool = subKey and stateKey[subKey] or stateKey
+		btn.Text = "  " .. name .. " : " .. (currentBool and "ON" or "OFF")
+		btn.TextXAlignment = Enum.TextXAlignment.Left
+		btn.BackgroundColor3 = currentBool and Color3.fromRGB(40, 110, 80) or Color3.fromRGB(130, 45, 45)
+	end
+
+	update()
+	btn.MouseButton1Click:Connect(function()
+		if subKey then stateKey[subKey] = not stateKey[subKey] callback(stateKey[subKey])
+		else _G[name.."_state"] = not _G[name.."_state"] callback(_G[name.."_state"]) end
+		update()
+	end)
+	btn.Parent = parent
+end
+
+--========================
+-- 🔴 MEMORY OPTIMIZED ESP
+--========================
+local function clearESP(character)
+	if espCache[character] then
+		for _, item in ipairs(espCache[character]) do
+			if typeof(item) == "RBXScriptConnection" then item:Disconnect()
+			elseif typeof(item) == "Instance" and item.Parent then item:Destroy() end
+		end
+		espCache[character] = nil
+	end
+end
+
+local function createESP(plr, character)
+	if not espEnabled or espCache[character] then return end
+	local hum = character:FindFirstChildOfClass("Humanoid")
+	local head = character:FindFirstChild("Head")
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not hum or not head or not root then return end
+
+	local cacheObjects = {}
+
+	if espSettings.highlight then
+		local hl = Instance.new("Highlight")
+		hl.DepthMode = espSettings.wall and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded
+		hl.FillColor = Color3.fromRGB(240, 50, 50)
+		hl.FillTransparency = 0.6
+		hl.Parent = character
+		table.insert(cacheObjects, hl)
+	end
+
+	if espSettings.name or espSettings.distance then
+		local bill = Instance.new("BillboardGui")
+		bill.Size = UDim2.new(0, 150, 0, 35)
+		bill.AlwaysOnTop = true
+		bill.Adornee = head
+
+		local txt = Instance.new("TextLabel")
+		txt.Size = UDim2.new(1, 0, 1, 0)
+		txt.BackgroundTransparency = 1
+		txt.TextColor3 = Color3.new(1, 1, 1)
+		txt.TextSize = 12
+		txt.Font = Enum.Font.SourceSansBold
+		txt.Parent = bill
+		bill.Parent = head
+		table.insert(cacheObjects, bill)
+
+		local renderConn
+		renderConn = RunService.Heartbeat:Connect(function()
+			if not character.Parent or not head.Parent or not bill.Parent then if renderConn then renderConn:Disconnect() end return end
+			-- Dynamic Distance Opt: Khoảng cách > 250m tự động ẩn chữ để nhẹ RAM
+			local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+			if myRoot then
+				local dist = (myRoot.Position - root.Position).Magnitude
+				if dist > 250 then txt.Text = "" return end
+				
+				local info = {}
+				if espSettings.name then table.insert(info, plr.Name) end
+				if espSettings.distance then table.insert(info, math.floor(dist) .. "m") end
+				txt.Text = table.concat(info, " | ")
+			end
+		end)
+		table.insert(cacheObjects, renderConn)
+	end
+	espCache[character] = cacheObjects
+end
+
+local function refreshESP()
+	for _, plr in ipairs(Players:GetPlayers()) do if plr ~= player and plr.Character then clearESP(plr.Character) createESP(plr, plr.Character) end end
+end
+
+--========================
+-- 🔥 CORES: SMART AUTO KILL MECHANICS
+--========================
+local function getBestTarget()
+	local closestPlr = nil
+	local shortestDistance = math.huge
+	local myChar = player.Character
+	local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+
+	if not myRoot then return nil end
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChildOfClass("Humanoid") then
+			local hum = plr.Character.Humanoid
+			if hum.Health > 0 then
+				local dist = (myRoot.Position - plr.Character.HumanoidRootPart.Position).Magnitude
+				if dist < shortestDistance then
+					-- Kiểm tra chống kẹt: Nếu mục tiêu này đang làm mình bị kẹt, tạm thời bỏ qua
+					if lastTarget == plr and targetStuckTimer > 5 then
+						continue
+					end
+					shortestDistance = dist
+					closestPlr = plr
+				end
+			end
+		end
+	end
+	return closestPlr
+end
+
+task.spawn(function()
+	while true do
+		task.wait(0.25)
+		if not keyVerified then continue end
+
+		local target = getBestTarget()
+		if target and target.Character and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			local targetRoot = target.Character.HumanoidRootPart
+			local myRoot = player.Character.HumanoidRootPart
+
+			-- Xử lý bộ đếm chống kẹt thông minh
+			if lastTarget == target then
+				targetStuckTimer = targetStuckTimer + 0.25
+			else
+				lastTarget = target
+				targetStuckTimer = 0
+			end
+
+			-- 1. Auto Teleport Mod
+			if autoKillEnabled then
+				myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 3.2)
+			end
+
+			-- 2. Kill Aura Pro
+			if killAuraEnabled then
+				local distance = (myRoot.Position - targetRoot.Position).Magnitude
+				if distance <= killAuraRange then
+					camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, targetRoot.Position), 0.3)
+					
+					pcall(function()
+						VirtualUser:CaptureController()
+						VirtualUser:ClickButton1(Vector2.new(0, 0))
+					end)
+					
+					-- Mô phỏng việc đếm lượt hạ gục dựa trên trạng thái máu của mục tiêu giảm về 0
+					local targetHum = target.Character:FindFirstChildOfClass("Humanoid")
+					if targetHum and targetHum.Health <= 0 then
+						totalKillsSession = totalKillsSession + 1
+						killLabel.Text = "Kills Đã Đạt: " .. totalKillsSession
+						task.wait(0.1)
+					end
+				end
+			end
+		else
+			targetStuckTimer = 0
+		end
+	end
+end)
+
+--========================
+-- 🧊 BAY & XUYÊN TƯỜNG (SMART HEARTBEAT)
+--========================
+local flyBodyGyro, flyBodyVelocity
+RunService.Heartbeat:Connect(function()
+	if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+	local root = player.Character.HumanoidRootPart
+	local hum = player.Character:FindFirstChildOfClass("Humanoid")
+
+	if noclipEnabled then
+		for _, part in ipairs(player.Character:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = false end end
+	end
+
+	if flyEnabled then
+		if not flyBodyGyro then
+			flyBodyGyro = Instance.new("BodyGyro", root)
+			flyBodyGyro.maxTorque = Vector3.new(9e9, 9e9, 9e9)
+			flyBodyVelocity = Instance.new("BodyVelocity", root)
+			flyBodyVelocity.maxForce = Vector3.new(9e9, 9e9, 9e9)
+		end
+		flyBodyGyro.cframe = camera.CFrame
+		flyBodyVelocity.velocity = camera.CFrame.LookVector * flySpeed
+	else
+		if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
+		if flyBodyVelocity then flyBodyVelocity:Destroy() flyBodyVelocity = nil end
+	end
+end)
+
+UIS.JumpRequest:Connect(function()
+	if infJumpEnabled and player.Character then
+		local hum = player.Character:FindFirstChildOfClass("Humanoid")
+		if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+	end
+end)
+
+--========================
+-- 🔄 AUTO RECONNECT SYSTEM (CHỐNG MẤT KẾT NỐI KHI TREO MÁY)
+--========================
+pcall(function()
+	game:GetService("GuiService").ErrorMessageChanged:Connect(function()
+		task.wait(4)
+		game:GetService("TeleportService"):Teleport(game.PlaceId, player)
+	end)
+end)
+
+--========================
+-- TABS MANAGER
+--========================
+local UIListLayout = Instance.new("UIListLayout", content)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 4)
+
+local function createTabButton(name, yOffset, callback)
+	local btn = Instance.new("TextButton", sidebar)
+	btn.Size = UDim2.new(1, 0, 0, 35) btn.Position = UDim2.new(0, 0, 0, yOffset)
+	btn.Text = name btn.Font = Enum.Font.SourceSansBold btn.TextSize = 13
+	btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35) btn.TextColor3 = Color3.new(1, 1, 1)
+	btn.MouseButton1Click:Connect(callback)
+end
+
+createTabButton("ESP Visual", 0, function()
+	content:ClearAllChildren() Instance.new("UIListLayout", content).Padding = UDim.new(0,4)
+	_G["ESP_state"] = espEnabled
+	createToggle(content, "Bật ESP Toàn Cục", _G, "ESP_state", function(v) espEnabled = v refreshESP() end)
+	createToggle(content, "Hiện Khung Mô Hình", espSettings, "highlight", function(v) refreshESP() end)
+	createToggle(content, "Hiện Tên Cầu Thủ", espSettings, "name", function(v) refreshESP() end)
+	createToggle(content, "Tính Khoảng Cách", espSettings, "distance", function(v) refreshESP() end)
+end)
+
+createTabButton("🔥 Treo Máy VIP", 35, function()
+	content:ClearAllChildren() Instance.new("UIListLayout", content).Padding = UDim.new(0,4)
+	_G["AutoKill_state"] = autoKillEnabled
+	createToggle(content, "Tự Động Áp Sát (Teleport)", _G, "AutoKill_state", function(v) 
+		if premiumKeyValid then autoKillEnabled = v else autoKillEnabled = false end
+	end)
+	_G["KillAura_state"] = killAuraEnabled
+	createToggle(content, "Vòng Lặp Tấn Công (Aura)", _G, "KillAura_state", function(v) 
+		if premiumKeyValid then killAuraEnabled = v else killAuraEnabled = false end
+	end)
+end)
+
+createTabButton("Hỗ Trợ Di Chuyển", 70, function()
+	content:ClearAllChildren() Instance.new("UIListLayout", content).Padding = UDim.new(0,4)
+	_G["Noclip_state"] = noclipEnabled
+	createToggle(content, "Chế Độ Đi Xuyên Tường", _G, "Noclip_state", function(v) noclipEnabled = v end)
+	_G["InfJump_state"] = infJumpEnabled
+	createToggle(content, "Kích Hoạt Nhảy Vô Hạn", _G, "InfJump_state", function(v) infJumpEnabled = v end)
+	_G["Fly_state"] = flyEnabled
+	createToggle(content, "Tự Động Bay Lượn", _G, "Fly_state", function(v) flyEnabled = v end)
+end)
+
+createTabButton("Hệ Thống Key", 105, function()
+	content:ClearAllChildren() Instance.new("UIListLayout", content).Padding = UDim.new(0,4)
+	local status = Instance.new("TextLabel", content)
+	status.Size = UDim2.new(0.95, 0, 0, 35) status.BackgroundTransparency = 1 status.Font = Enum.Font.SourceSansBold status.TextSize = 14
+
+	local box = Instance.new("TextBox", content) box.Size = UDim2.new(0.95, 0, 0, 35) box.PlaceholderText = "Nhập Mã Cao Cấp..."
+	local btn = Instance.new("TextButton", content) btn.Size = UDim2.new(0.95, 0, 0, 35) btn.Text = "Kích Hoạt Hệ Thống" btn.BackgroundColor3 = Color3.fromRGB(212, 175, 55)
+
+	local function updateStatus()
+		if premiumKeyValid then 
+			status.Text = "👑 PHIÊN BẢN CAO CẤP ĐÃ BẬT" status.TextColor3 = Color3.fromRGB(255, 215, 0) box.Visible = false btn.Visible = false dashFrame.Visible = true
+		else status.Text = "🔒 PHIÊN BẢN TIÊU CHUẨN" status.TextColor3 = Color3.fromRGB(160, 160, 160) end
+	end
+	updateStatus()
+	btn.MouseButton1Click:Connect(function()
+		if box.Text == PREMIUM_KEY then premiumKeyValid = true updateStatus() refreshESP() else end
+	end)
+end)
+
+--========================
+-- CONTROLS SIGNALS
+--========================
+keyBtn.MouseButton1Click:Connect(function()
+	if keyBox.Text == VALID_KEY then keyVerified = true keyFrame.Visible = false main.Visible = true refreshESP()
+	elseif keyBox.Text == PREMIUM_KEY then
+		keyVerified = true premiumKeyValid = true keyFrame.Visible = false main.Visible = true dashFrame.Visible = true refreshESP()
+	end
+end)
+
+keyClose.MouseButton1Click:Connect(function() keyFrame.Visible = false mini.Visible = true end)
+mini.MouseButton1Click:Connect(function() mini.Visible = false if keyVerified then main.Visible = true else keyFrame.Visible = true end end)
+close.MouseButton1Click:Connect(function() main.Visible = false mini.Visible = true end)
