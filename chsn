@@ -1,0 +1,260 @@
+--===================================================================================
+-- 🥀 ROSE IN-GAME AUTO SYSTEM v6.2 [STUDIO COMPATIBLE]
+-- Place this LocalScript inside StarterPlayerScripts or StarterGui
+--===================================================================================
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- ==========================================
+-- 🛠️ OPERATIONAL CONFIGURATION
+-- ==========================================
+local MOVE_SPEED = 70       -- Tốc độ di chuyển tự động an toàn
+local ATTACK_DELAY = 0.3     -- Tốc độ vung vũ khí (giây)
+local SCAN_RANGE = 400       -- Bán kính tự quét mục tiêu xung quanh (Studs)
+
+local isAutoing = false
+local noclipConnection = nil
+
+-- ==========================================
+-- 🎨 IN-GAME STUDIO UI (Rose Cyberpink Theme)
+-- ==========================================
+local Theme = {
+	Background = Color3.fromRGB(18, 18, 22),
+	TitleBar = Color3.fromRGB(12, 12, 14),
+	Accent = Color3.fromRGB(255, 0, 85), 
+	Text = Color3.fromRGB(245, 245, 245),
+	TextMuted = Color3.fromRGB(140, 140, 140),
+	Green = Color3.fromRGB(0, 220, 120),
+	Red = Color3.fromRGB(220, 40, 60)
+}
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "InGameAutoGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = PlayerGui
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 250, 0, 160)
+MainFrame.Position = UDim2.new(0.05, 0, 0.35, 0)
+MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+
+local FrameCorner = Instance.new("UICorner", MainFrame)
+FrameCorner.CornerRadius = UDim.new(0, 12)
+local UIStroke = Instance.new("UIStroke", MainFrame)
+UIStroke.Color = Theme.TitleBar; UIStroke.Thickness = 1.5
+
+local TitleLabel = Instance.new("TextLabel", MainFrame)
+TitleLabel.Size = UDim2.new(1, 0, 0, 38)
+TitleLabel.BackgroundColor3 = Theme.TitleBar
+TitleLabel.Text = "🤖 IN-GAME AUTO ASSISTANT"
+TitleLabel.TextColor3 = Theme.Accent; TitleLabel.TextSize = 11; TitleLabel.Font = Enum.Font.GothamBold
+Instance.new("UICorner", TitleLabel).CornerRadius = UDim.new(0, 12)
+
+local StatusLabel = Instance.new("TextLabel", MainFrame)
+StatusLabel.Size = UDim2.new(1, -20, 0, 30); StatusLabel.Position = UDim2.new(0, 12, 0, 45)
+StatusLabel.BackgroundTransparency = 1; StatusLabel.Text = "Trạng thái: Sẵn sàng"; StatusLabel.TextColor3 = Theme.TextMuted
+StatusLabel.TextSize = 12; StatusLabel.TextXAlignment = Enum.TextXAlignment.Left; StatusLabel.Font = Enum.Font.Gotham
+
+local TargetLabel = Instance.new("TextLabel", MainFrame)
+TargetLabel.Size = UDim2.new(1, -20, 0, 25); TargetLabel.Position = UDim2.new(0, 12, 0, 70)
+TargetLabel.BackgroundTransparency = 1; TargetLabel.Text = "Mục tiêu: Đang đợi lệnh..."; TargetLabel.TextColor3 = Theme.TextMuted
+TargetLabel.TextSize = 11; TargetLabel.TextXAlignment = Enum.TextXAlignment.Left; TargetLabel.Font = Enum.Font.Gotham
+
+local ToggleButton = Instance.new("TextButton", MainFrame)
+ToggleButton.Size = UDim2.new(1, -24, 0, 42); ToggleButton.Position = UDim2.new(0, 12, 0, 105)
+ToggleButton.BackgroundColor3 = Theme.Red; ToggleButton.Text = "BẬT HỖ TRỢ TỰ ĐỘNG"; ToggleButton.TextColor3 = Theme.Text
+ToggleButton.TextSize = 12; ToggleButton.Font = Enum.Font.GothamBold
+Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(0, 8)
+
+-- Hệ thống kéo thả UI mượt mà bằng UserInputService
+local function makeUiDraggable(frame, handle)
+	local dragging, dragStart, startPos
+	handle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = true; dragStart = input.Position; startPos = frame.Position
+			input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+			local delta = input.Position - dragStart
+			frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		end
+	end)
+end
+makeUiDraggable(MainFrame, TitleLabel)
+
+local function updateUI(statusText, isRunning, targetName)
+	StatusLabel.Text = "Trạng thái: " .. statusText
+	TargetLabel.Text = "Mục tiêu: " .. (targetName or "Trống...")
+	ToggleButton.BackgroundColor3 = isRunning and Theme.Green or Theme.Red
+	ToggleButton.Text = isRunning and "TẮT HỖ TRỢ" or "BẬT HỖ TRỢ TỰ ĐỘNG"
+end
+
+-- ==========================================
+-- 🔄 MOVEMENT CONTROL (NOCLIP & TWEEN)
+-- ==========================================
+local function toggleNoclip(state)
+	if state then
+		if not noclipConnection then
+			noclipConnection = RunService.Stepped:Connect(function()
+				if LocalPlayer.Character then
+					for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+						if part:IsA("BasePart") then part.CanCollide = false end
+					end
+				end
+			end)
+		end
+	else
+		if noclipConnection then noclipConnection:Disconnect(); noclipConnection = nil end
+	end
+end
+
+local function safeTeleport(targetCFrame)
+	local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+	local root = char:WaitForChild("HumanoidRootPart", 5)
+	if not root then return end
+	
+	local distance = (root.Position - targetCFrame.Position).Magnitude
+	local duration = distance / MOVE_SPEED
+	
+	toggleNoclip(true)
+	local bv = Instance.new("BodyVelocity", root)
+	bv.Velocity = Vector3.new(0, 0, 0); bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	
+	local tween = TweenService:Create(root, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = targetCFrame})
+	tween:Play(); tween.Completed:Wait()
+	
+	bv:Destroy(); toggleNoclip(false)
+	root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+end
+
+-- ==========================================
+-- 🧠 ENVIRONMENT SCANNING THREADS
+-- ==========================================
+
+-- 1. Tự động tương tác với ProximityPrompt của NPC theo cơ chế chuẩn Studio
+local function autoInteractWithQuestNPC()
+	local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	if not myRoot then return false end
+	
+	for _, v in ipairs(workspace:GetDescendants()) do
+		if v:IsA("ProximityPrompt") then
+			local parentModel = v:FindFirstAncestorOfClass("Model")
+			if parentModel and parentModel ~= LocalPlayer.Character then
+				local npcRoot = parentModel:FindFirstChild("HumanoidRootPart") or parentModel:FindFirstChildWhichIsA("BasePart")
+				if npcRoot then
+					local nameLower = parentModel.Name:lower() .. v.ObjectText:lower() .. v.ActionText:lower()
+					if nameLower:find("quest") or nameLower:find("nhiệm vụ") or nameLower:find("nv") then
+						updateUI("Đang nhận/trả nhiệm vụ...", true, parentModel.Name)
+						safeTeleport(npcRoot.CFrame * CFrame.new(0, 0, -3.5))
+						task.wait(0.3)
+						
+						-- 👉 THAY THẾ CHÍNH THỨC: Giả lập tương tác Prompt an toàn trên hệ thống Roblox
+						v:InputBegan(Enum.UserInputType.MouseButton1, LocalPlayer)
+						task.wait(0.2)
+						return true
+					end
+				end
+			end
+		end
+	end
+	return false
+end
+
+-- 2. Tự động định vị Quái vật gần nhất trong Workspace
+local function findAnyTargetMonster()
+	local myChar = LocalPlayer.Character
+	local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+	if not myRoot then return nil end
+
+	local closestMonster = nil
+	local shortestDistance = SCAN_RANGE
+
+	for _, v in ipairs(workspace:GetDescendants()) do
+		if v:IsA("Model") and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v ~= myChar then
+			local hum = v.Humanoid
+			-- Lọc: Chỉ quái còn sống và bỏ qua các Model có lượng máu vô tận (thường là NPC/Bảo tàng)
+			if hum.Health > 0 and hum.MaxHealth < 500000 then 
+				local dist = (myRoot.Position - v.HumanoidRootPart.Position).Magnitude
+				if dist < shortestDistance then
+					closestMonster = v
+					shortestDistance = dist
+				end
+			end
+		end
+	end
+	return closestMonster
+end
+
+-- ==========================================
+-- 🔄 CORE ENGINE LOOP
+-- ==========================================
+local function startUniversalFarm()
+	isAutoing = true
+	
+	while isAutoing do
+		local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+		local hum = char:WaitForChild("Humanoid")
+		
+		-- Bước 1: Quét và tương tác NPC nhận nhiệm vụ gần nhất
+		autoInteractWithQuestNPC()
+		if not isAutoing then break end
+		
+		-- Bước 2: Tìm quái cày cấp
+		updateUI("Đang định vị mục tiêu...", true)
+		local targetMob = findAnyTargetMonster()
+		
+		if targetMob and targetMob:FindFirstChild("HumanoidRootPart") then
+			while isAutoing and targetMob and targetMob:FindFirstChild("HumanoidRootPart") and targetMob.Humanoid.Health > 0 do
+				updateUI("Đang tự động thực hiện hành vi", true, targetMob.Name .. " (" .. math.floor(targetMob.Humanoid.Health) .. " HP)")
+				
+				-- Giữ nhân vật khóa vị trí phía trên đầu quái vật 3 studs (Tránh nhận sát thương cận chiến của quái)
+				char.HumanoidRootPart.CFrame = targetMob.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0) * CFrame.Angles(math.rad(-90), 0, 0)
+				
+				-- Tự động kích hoạt Tool người chơi đang sở hữu
+				local tool = LocalPlayer.Backpack:FindFirstChildOfClass("Tool") or char:FindFirstChildOfClass("Tool")
+				if tool then
+					if tool.Parent ~= char then hum:EquipTool(tool) end
+					tool:Activate()
+				end
+				task.wait(ATTACK_DELAY)
+			end
+		else
+			updateUI("⏳ Đang đợi mục tiêu xuất hiện...", true)
+			task.wait(1)
+		end
+		
+		task.wait(0.1)
+	end
+end
+
+local function stopUniversalFarm()
+	isAutoing = false
+	toggleNoclip(false)
+	updateUI("Đã tắt", false, "Trống")
+end
+
+-- ==========================================
+-- LISTENER EVENTS
+-- ==========================================
+ToggleButton.MouseButton1Click:Connect(function()
+	if isAutoing then stopUniversalFarm() else task.spawn(startUniversalFarm) end
+end)
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if input.KeyCode == Enum.KeyCode.G then
+		if isAutoing then stopUniversalFarm() else task.spawn(startUniversalFarm) end
+	end
+end)
+
+updateUI("Sẵn sàng", false)
