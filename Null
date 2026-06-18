@@ -2,13 +2,12 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
+local Vim = game:GetService("VirtualInputManager")
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
---// 🛡️ ANONYMOUS GENERATOR (ẨN DANH HOÀN TOÀN GUI CHỐNG ADMIN QUÉT)
+--// 🛡️ ANONYMOUS GENERATOR
 local function generateRandomName()
 	local length = math.random(12, 18)
 	local array = {}
@@ -22,21 +21,28 @@ local states = {
 	-- Tab ESP
 	espGlobal = true, espHighlight = true, espName = true, espDistance = true,
 	-- Tab Treo Máy
-	autoTeleport = false, 
+	autoTeleport = false,
 	killAura = false, 
-	killAuraRange = 12, 
-	fakeLag = false, 
-	fakeLagAmount = 0.22,
+	killAuraRange = 11,
 	-- Tab Di Chuyển
-	noclip = false, infJump = false, fly = false, flySpeed = 30
+	noclip = false, infJump = false, fly = false, flySpeed = 30,
+	speedHack = false, walkSpeedValue = 50,
+	-- Tab Beta Studio
+	betaMode = false
 }
 
 local totalKillsSession = 0
-local startTime = os.time()
+local startTime = os.time() -- Đã sửa thành os.time()
 local espCache = {}
 local lastTarget = nil
-local targetStuckTimer = 0
+local dummyBot = nil
 local teleportTick = tick()
+
+-- Biến tối ưu hóa Animation
+local slashAnimationInstance = Instance.new("Animation")
+slashAnimationInstance.AnimationId = "rbxassetid://507768375" 
+local loadedTrack = nil
+local lastAnimator = nil
 
 --// GUI CONTAINER
 local gui = Instance.new("ScreenGui")
@@ -101,7 +107,7 @@ timeLabel.BackgroundTransparency = 1
 task.spawn(function()
 	while true do
 		task.wait(1)
-		local elapsed = os.time() - startTime
+		local elapsed = os.time() - startTime -- Đã sửa thành os.time()
 		timeLabel.Text = string.format("Thời gian chạy: %02d:%02d", math.floor(elapsed / 60), elapsed % 60)
 	end
 end)
@@ -162,6 +168,7 @@ end
 local espContainer = createTabContainer("Cấu Hình ESP")
 local combatContainer = createTabContainer("Treo Máy Đấu Trường")
 local movementContainer = createTabContainer("Cài Đặt Di Chuyển")
+local betaContainer = createTabContainer("Beta Studio Test")
 
 --========================
 -- 🎨 UI COMPONENTS CREATOR
@@ -208,13 +215,21 @@ end
 local function clearESP(character)
 	if espCache[character] then
 		for _, item in ipairs(espCache[character]) do
-			pcall(function() if typeof(item) == "RBXScriptConnection" then item:Disconnect() else item:Destroy() end end)
+			pcall(function() 
+				if item then
+					if typeof(item) == "RBXScriptConnection" then 
+						item:Disconnect() 
+					else 
+						item:Destroy() 
+					end 
+				end
+			end)
 		end
 		espCache[character] = nil
 	end
 end
 
-local function createESP(plr, character)
+local function createESP(customName, character)
 	if not states.espGlobal or espCache[character] then return end
 	local head = character:FindFirstChild("Head")
 	local root = character:FindFirstChild("HumanoidRootPart")
@@ -233,26 +248,43 @@ local function createESP(plr, character)
 
 	if states.espName or states.espDistance then
 		local bill = Instance.new("BillboardGui", head)
-		bill.Size = UDim2.new(0, 140, 0, 30)
+		bill.Size = UDim2.new(0, 140, 0, 40)
 		bill.AlwaysOnTop = true
 
 		local txt = Instance.new("TextLabel", bill)
-		txt.Size = UDim2.new(1, 0, 1, 0)
+		txt.Size = UDim2.new(1, 0, 0.5, 0)
 		txt.BackgroundTransparency = 1
 		txt.TextColor3 = Color3.new(1, 1, 1)
 		txt.TextSize = 11
 		txt.Font = Enum.Font.SourceSansBold
 
-		local conn = RunService.Heartbeat:Connect(function()
-			if not character.Parent or not head.Parent then conn:Disconnect() return end
+		local healthBg = Instance.new("Frame", bill)
+		healthBg.Size = UDim2.new(0.8, 0, 0, 4)
+		healthBg.Position = UDim2.new(0.1, 0, 0.6, 0)
+		healthBg.BackgroundColor3 = Color3.fromRGB(50, 0, 0)
+		healthBg.BorderSizePixel = 0
+
+		local healthBar = Instance.new("Frame", healthBg)
+		healthBar.Size = UDim2.new(1, 0, 1, 0)
+		healthBar.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+		healthBar.BorderSizePixel = 0
+
+		local conn;
+		conn = RunService.Heartbeat:Connect(function()
+			if not character.Parent or not head.Parent or not root.Parent or not hum.Parent then 
+				if conn then conn:Disconnect() end 
+				return 
+			end
 			local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 			if myRoot then
 				local dist = (myRoot.Position - root.Position).Magnitude
-				if dist > 300 then txt.Text = "" return end
 				local display = {}
-				if states.espName then table.insert(display, plr.Name) end
+				if states.espName then table.insert(display, customName) end
 				if states.espDistance then table.insert(display, math.floor(dist) .. "m") end
 				txt.Text = table.concat(display, " | ")
+				
+				local pct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+				healthBar.Size = UDim2.new(pct, 0, 1, 0)
 			end
 		end)
 		table.insert(cacheObjects, conn)
@@ -263,13 +295,87 @@ end
 
 local function forceRefreshESP()
 	for char, _ in pairs(espCache) do clearESP(char) end
-	for _, p in ipairs(Players:GetPlayers()) do if p ~= player and p.Character then createESP(p, p.Character) end end
+	for _, p in ipairs(Players:GetPlayers()) do if p ~= player and p.Character then createESP(p.Name, p.Character) end end
+	if states.betaMode and dummyBot and dummyBot.Parent then
+		createESP("[BETA BOT]", dummyBot)
+	end
 end
 
 --========================
--- 🛡️ ADVANCED ANTI-CHEAT BYPASS COMBAT
+-- ⚙️ HỆ THỐNG GIẢ LẬP BETA TRONG ROBLOX STUDIO
+--========================
+local function spawnBetaDummy()
+	if not RunService:IsStudio() then return end
+	if dummyBot and dummyBot.Parent then dummyBot:Destroy() end
+	
+	local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not myRoot then return end
+	
+	local model = Instance.new("Model")
+	model.Name = "NovaBetaDummy"
+	
+	local parts = {"HumanoidRootPart", "Head", "UpperTorso", "LowerTorso"}
+	local createdParts = {}
+	
+	for _, name in ipairs(parts) do
+		local p = Instance.new("Part")
+		p.Name = name
+		p.Size = (name == "Head") and Vector3.new(1.2, 1.2, 1.2) or Vector3.new(2, 2, 1)
+		p.CanCollide = true
+		p.Anchored = false
+		p.Parent = model
+		createdParts[name] = p
+	end
+	
+	createdParts.HumanoidRootPart.CFrame = myRoot.CFrame * CFrame.new(0, 0, -8)
+	createdParts.Head.CFrame = createdParts.HumanoidRootPart.CFrame * CFrame.new(0, 2, 0)
+	createdParts.UpperTorso.CFrame = createdParts.HumanoidRootPart.CFrame * CFrame.new(0, 0.5, 0)
+	createdParts.LowerTorso.CFrame = createdParts.HumanoidRootPart.CFrame * CFrame.new(0, -0.5, 0)
+	
+	for name, part in pairs(createdParts) do
+		if name ~= "HumanoidRootPart" then
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = createdParts.HumanoidRootPart
+			weld.Part1 = part
+			weld.Parent = createdParts.HumanoidRootPart
+		end
+	end
+	
+	local hum = Instance.new("Humanoid", model)
+	hum.MaxHealth = 100
+	hum.Health = 100
+	
+	hum.Died:Connect(function()
+		totalKillsSession = totalKillsSession + 1
+		killLabel.Text = "Kills Đã Đạt: " .. totalKillsSession
+		clearESP(model)
+		task.wait(2)
+		if states.betaMode then spawnBetaDummy() end
+	end)
+	
+	model.Parent = workspace
+	dummyBot = model
+	
+	if states.espGlobal then createESP("[BETA BOT]", dummyBot) end
+end
+
+local function removeBetaDummy()
+	if dummyBot then
+		clearESP(dummyBot)
+		dummyBot:Destroy()
+		dummyBot = nil
+	end
+end
+
+--========================
+-- ⚔️ CƠ CHẾ CHÉM VẬT LÝ + ANIMATION
 --========================
 local function scanKnifeTarget()
+	if states.betaMode and dummyBot and dummyBot:FindFirstChild("HumanoidRootPart") then
+		local hum = dummyBot:FindFirstChildOfClass("Humanoid")
+		if hum and hum.Health > 0 then return dummyBot end
+	end
+
 	local best = nil
 	local minDist = math.huge
 	local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
@@ -280,99 +386,100 @@ local function scanKnifeTarget()
 			local hum = p.Character:FindFirstChildOfClass("Humanoid")
 			if hum and hum.Health > 0 and not p.Character:FindFirstChildOfClass("ForceField") then
 				local d = (myRoot.Position - p.Character.HumanoidRootPart.Position).Magnitude
-				if d < minDist then
-					if lastTarget == p and targetStuckTimer > 4 then continue end
-					minDist = d
-					best = p
-				end
+				if d < minDist then minDist = d best = p.Character end
 			end
 		end
 	end
 	return best
 end
 
-local function executeKnifeSlash()
+local function playSlashAnimation()
 	pcall(function()
-		local tool = player.Character:FindFirstChildOfClass("Tool") or player.Backpack:FindFirstChildOfClass("Tool")
-		if tool then
-			if tool.Parent ~= player.Character then tool.Parent = player.Character end
-			tool:Activate()
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if not hum then return end
+		local animator = hum:FindFirstChildOfClass("Animator") or Instance.new("Animator", hum)
+		
+		if lastAnimator ~= animator or not loadedTrack then
+			lastAnimator = animator
+			loadedTrack = animator:LoadAnimation(slashAnimationInstance)
+			loadedTrack.Priority = Enum.AnimationPriority.Action
 		end
 		
-		for _, child in ipairs(ReplicatedStorage:GetDescendants()) do
-			if child:IsA("RemoteEvent") and (string.find(string.lower(child.Name), "slash") or string.find(string.lower(child.Name), "swing") or string.find(string.lower(child.Name), "attack") or string.find(string.lower(child.Name), "knife") or string.find(string.lower(child.Name), "hit")) then
-				child:FireServer()
-			end
+		if loadedTrack then
+			loadedTrack:Play(0.1, 1, 1.5)
+		end
+	end)
+end
+
+local function simulatePhysicalClick(targetChar)
+	pcall(function()
+		local tool = player.Character:FindFirstChildOfClass("Tool") or player.Backpack:FindFirstChildOfClass("Tool")
+		if tool and tool.Parent ~= player.Character then tool.Parent = player.Character end
+		
+		playSlashAnimation()
+		
+		Vim:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+		task.wait(0.01)
+		Vim:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+		
+		if states.betaMode and targetChar == dummyBot then
+			local hum = targetChar:FindFirstChildOfClass("Humanoid")
+			if hum then hum.Health = math.max(0, hum.Health - math.random(10, 15)) end
 		end
 	end)
 end
 
 task.spawn(function()
 	while true do
-		task.wait(math.random(12, 17) / 100) 
+		task.wait(math.random(50, 75) / 1000)
 		
-		local target = scanKnifeTarget()
-		if target and target.Character and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-			local tRoot = target.Character.HumanoidRootPart
+		local targetChar = scanKnifeTarget()
+		if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			local tRoot = targetChar.HumanoidRootPart
 			local myRoot = player.Character.HumanoidRootPart
-			local hum = player.Character:FindFirstChildOfClass("Humanoid")
-
-			if lastTarget == target then targetStuckTimer = targetStuckTimer + 0.15 else lastTarget = target targetStuckTimer = 0 end
-
-			-- 🛠️ [Ý TƯỞNG CỦA BẠN] GỬI DỮ LIỆU CHUYỂN ĐỘNG LIÊN TỤC VỀ SERVER TRONG 0.1S (MÔ PHỎNG SPEED HỢP LỆ)
-			if states.autoTeleport and tick() - teleportTick > 0.15 then
-				local behindEnemyPos = tRoot.Position + (tRoot.CFrame.LookVector * -2.3) -- Tọa độ sau lưng địch
-				
-				-- Ép trạng thái nhân vật sang Running (Đang chạy) để hợp thức hóa dữ liệu với Server Anti-cheat
-				if hum then hum:ChangeState(Enum.HumanoidStateType.Running) end
-				
-				-- Bẻ nhỏ chuyển động thành một chuỗi vòng lặp cực nhanh gửi thông tin thay đổi tọa độ liên tục (0.01-0.02 giây mỗi chặng)
-				local duration = 0.08 -- Tổng thời gian gửi thông tin dồn dập (Dưới 0.1 giây)
-				local steps = 5
-				local startPos = myRoot.Position
-				
-				for i = 1, steps do
-					if not myRoot or not tRoot then break end
-					local alpha = i / steps
-					-- Tính toán điểm nội suy tuyến tính (Lerp Position) để tạo đường đi hợp lệ gửi về cho server nhận diện
-					local lerpedPos = startPos:Lerp(behindEnemyPos, alpha)
-					
-					-- Gán trực tiếp và ép xóa toàn bộ lực quán tính thừa tránh bị cao sọc Velocity
-					myRoot.Velocity = Vector3.new(0, 0, 0)
-					myRoot.CFrame = CFrame.new(lerpedPos, tRoot.Position)
-					
-					task.wait(duration / steps) -- Thời gian trễ siêu nhỏ (~0.016s) đồng bộ chuyển động liên tục
-				end
-				
+			
+			if states.autoTeleport and tick() - teleportTick > 0.2 then
+				pcall(function()
+					local targetBehindPos = tRoot.Position + (tRoot.CFrame.LookVector * -2.5)
+					myRoot.CFrame = CFrame.new(targetBehindPos, tRoot.Position)
+				end)
 				teleportTick = tick()
 			end
 
-			-- Vòng lặp Combat Aura
 			if states.killAura then
 				local dist = (myRoot.Position - tRoot.Position).Magnitude
 				if dist <= states.killAuraRange then
-					camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, tRoot.Position), 0.4)
-					executeKnifeSlash()
+					camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, tRoot.Position), 0.35)
+					simulatePhysicalClick(targetChar)
 					
-					if target.Character.Humanoid.Health <= 0 then
+					local hum = targetChar:FindFirstChildOfClass("Humanoid")
+					if hum and hum.Health <= 0 and not states.betaMode and lastTarget ~= targetChar then
+						lastTarget = targetChar
 						totalKillsSession = totalKillsSession + 1
 						killLabel.Text = "Kills Đã Đạt: " .. totalKillsSession
 					end
 				end
 			end
-		else
-			targetStuckTimer = 0
 		end
 	end
 end)
 
 --========================
--- 🌐 LOOPS GIẢ LAG & DI CHUYỂN
+-- 🌐 LOOPS DI CHUYỂN TOÀN CỤC
 --========================
-local lagTick = tick()
 RunService.Heartbeat:Connect(function()
-	if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
-	local root = player.Character.HumanoidRootPart
+	if not player.Character or not player.Character:FindFirstChildOfClass("Humanoid") then return end
+	local hum = player.Character:FindFirstChildOfClass("Humanoid")
+	local root = player.Character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+
+	if states.speedHack then
+		hum.WalkSpeed = states.walkSpeedValue
+	else
+		if hum.WalkSpeed == states.walkSpeedValue then
+			hum.WalkSpeed = 16 
+		end
+	end
 
 	if states.noclip then
 		for _, v in ipairs(player.Character:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide = false end end
@@ -388,20 +495,6 @@ RunService.Heartbeat:Connect(function()
 	else
 		if root:FindFirstChild("NovaFlyV") then root.NovaFlyV:Destroy() end
 		if root:FindFirstChild("NovaFlyG") then root.NovaFlyG:Destroy() end
-	end
-
-	-- Giả Lag (Fake Lag Bypass)
-	if states.fakeLag then
-		if states.autoTeleport and lastTarget then
-			settings().Network.IncomingReplicationLag = 0
-		elseif tick() - lagTick >= states.fakeLagAmount then
-			lagTick = tick()
-			settings().Network.IncomingReplicationLag = states.fakeLagAmount
-		else
-			settings().Network.IncomingReplicationLag = 0
-		end
-	else
-		pcall(function() settings().Network.IncomingReplicationLag = 0 end)
 	end
 end)
 
@@ -436,7 +529,7 @@ local function createTabButton(tabName)
 	tabCount = tabCount + 1
 end
 
--- Khởi tạo Tab chứa nhiều chức năng
+-- Khởi tạo các Tab tính năng công cụ
 createTabButton("Cấu Hình ESP")
 addToggle(espContainer, "Bật ESP Toàn Cục", states, "espGlobal", function() forceRefreshESP() end)
 addToggle(espContainer, "Bật Khung Mô Hình (Highlight)", states, "espHighlight", function() forceRefreshESP() end)
@@ -444,23 +537,32 @@ addToggle(espContainer, "Bật Nhìn Thấy Tên", states, "espName", function()
 addToggle(espContainer, "Bật Tính Khoảng Cách", states, "espDistance", function() forceRefreshESP() end)
 
 createTabButton("Treo Máy Đấu Trường")
-addToggle(combatContainer, "Tự Động Áp Sát (Dữ Liệu Nhịp Tim)", states, "autoTeleport")
-addToggle(combatContainer, "Vòng Lặp Chém (Kill Aura)", states, "killAura")
-addToggle(combatContainer, "Kích Hoạt Giả Lag (Fake Lag)", states, "fakeLag")
+addToggle(combatContainer, "Tự Động Áp Sát (Teleporter)", states, "autoTeleport")
+addToggle(combatContainer, "Vòng Lặp Chém (Vim Autoclick)", states, "killAura")
 
 createTabButton("Cài Đặt Di Chuyển")
 addToggle(movementContainer, "Đi Xuyên Tường (Noclip)", states, "noclip")
 addToggle(movementContainer, "Kích Hoạt Nhảy Vô Hạn", states, "infJump")
 addToggle(movementContainer, "Kích Hoạt Tự Động Bay", states, "fly")
+addToggle(movementContainer, "Tăng Tốc Độ Di Chuyển", states, "speedHack")
+
+createTabButton("Beta Studio Test")
+addToggle(betaContainer, "Kích Hoạt Mô Phỏng Bot", states, "betaMode", function(isActive)
+	if isActive then spawnBetaDummy() else removeBetaDummy() end
+end)
 
 switchTab("Cấu Hình ESP")
 
 mini.MouseButton1Click:Connect(function() mini.Visible = false main.Visible = true end)
 close.MouseButton1Click:Connect(function() main.Visible = false mini.Visible = true end)
 
--- Reconnect phòng hộ khi mất kết nối
-pcall(function()
-	game:GetService("GuiService").ErrorMessageChanged:Connect(function()
-		task.wait(3) game:GetService("TeleportService"):Teleport(game.PlaceId, player)
-	end)
+-- Quét người chơi phòng thật
+for _, p in ipairs(Players:GetPlayers()) do
+	if p ~= player then
+		if p.Character then createESP(p.Name, p.Character) end
+		p.CharacterAdded:Connect(function(char) task.wait(1) if states.espGlobal then createESP(p.Name, char) end end)
+	end
+end
+Players.PlayerAdded:Connect(function(p)
+	p.CharacterAdded:Connect(function(char) task.wait(1) if states.espGlobal then createESP(p.Name, char) end end)
 end)
