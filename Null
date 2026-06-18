@@ -3,31 +3,32 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
---// SECURITY NAME IDENTIFIER
-local SECURE_GUI_NAME = "Nova_Arena_Optimized"
+--// 🛡️ ANONYMOUS GENERATOR (ẨN DANH HOÀN TOÀN GUI CHỐNG ADMIN QUÉT)
+local function generateRandomName()
+	local length = math.random(12, 18)
+	local array = {}
+	for i = 1, length do array[i] = string.char(math.random(97, 122)) end
+	return table.concat(array)
+end
+local SECURE_GUI_NAME = generateRandomName()
 
---// SYSTEM STATES (Bỏ hệ thống Key - Mở toàn bộ)
+--// SYSTEM STATES
 local states = {
 	-- Tab ESP
-	espGlobal = true, 
-	espHighlight = true, 
-	espName = true, 
-	espDistance = true,
+	espGlobal = true, espHighlight = true, espName = true, espDistance = true,
 	-- Tab Treo Máy
 	autoTeleport = false, 
 	killAura = false, 
-	killAuraRange = 15, -- Thu ngắn tầm chém lại để tránh bị Anti-cheat của Đấu Trường phát hiện
+	killAuraRange = 12, 
 	fakeLag = false, 
-	fakeLagAmount = 0.2,
+	fakeLagAmount = 0.22,
 	-- Tab Di Chuyển
-	noclip = false, 
-	infJump = false, 
-	fly = false, 
-	flySpeed = 35
+	noclip = false, infJump = false, fly = false, flySpeed = 30
 }
 
 local totalKillsSession = 0
@@ -44,7 +45,7 @@ gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
 --========================
--- 🥀 MINI ICON (NÚT MỞ MENU)
+-- 🥀 MINI ICON
 --========================
 local mini = Instance.new("TextButton")
 mini.Size = UDim2.new(0, 55, 0, 55)
@@ -106,7 +107,7 @@ task.spawn(function()
 end)
 
 --========================
--- 🖥 MAIN UI STRUCTURE (CẤU TRÚC PHÂN TAB ĐƠN)
+-- 🖥 MAIN UI STRUCTURE
 --========================
 local main = Instance.new("Frame")
 main.Size = UDim2.new(0, 470, 0, 260)
@@ -138,7 +139,6 @@ sidebar.Size = UDim2.new(0, 120, 1, -35)
 sidebar.Position = UDim2.new(0, 0, 0, 35)
 sidebar.BackgroundColor3 = Color3.fromRGB(16, 16, 16)
 
--- Các khu vực chứa chức năng riêng biệt cho từng Tab (Chứa nhiều chức năng bên trong)
 local tabsContainers = {}
 local function createTabContainer(tabName)
 	local container = Instance.new("ScrollingFrame", main)
@@ -159,13 +159,12 @@ local function createTabContainer(tabName)
 	return container
 end
 
--- Khởi tạo 3 tab chứa chức năng tập trung
 local espContainer = createTabContainer("Cấu Hình ESP")
 local combatContainer = createTabContainer("Treo Máy Đấu Trường")
 local movementContainer = createTabContainer("Cài Đặt Di Chuyển")
 
 --========================
--- 🎨 THÀNH PHẦN NÚT BẤM (TOGGLE COMPONENT)
+-- 🎨 UI COMPONENTS CREATOR
 --========================
 local function addToggle(container, labelText, stateTable, stateKey, callback)
 	local frame = Instance.new("Frame", container)
@@ -204,7 +203,7 @@ local function addToggle(container, labelText, stateTable, stateKey, callback)
 end
 
 --========================
--- 🔴 XỬ LÝ HỆ THỐNG ESP (TÌM ĐỊCH)
+-- 🔴 HỆ THỐNG ESP BẢO MẬT
 --========================
 local function clearESP(character)
 	if espCache[character] then
@@ -268,7 +267,7 @@ local function forceRefreshESP()
 end
 
 --========================
--- 🔥 SỬA LỖI COMBAT KHÔNG CHẠY (KNIFE ARENA BYPASS)
+-- 🛡️ ADVANCED ANTI-CHEAT BYPASS COMBAT
 --========================
 local function scanKnifeTarget()
 	local best = nil
@@ -282,7 +281,7 @@ local function scanKnifeTarget()
 			if hum and hum.Health > 0 and not p.Character:FindFirstChildOfClass("ForceField") then
 				local d = (myRoot.Position - p.Character.HumanoidRootPart.Position).Magnitude
 				if d < minDist then
-					if lastTarget == p and targetStuckTimer > 3.5 then continue end
+					if lastTarget == p and targetStuckTimer > 4 then continue end
 					minDist = d
 					best = p
 				end
@@ -292,17 +291,14 @@ local function scanKnifeTarget()
 	return best
 end
 
--- Cơ chế chém vây bắt trực tiếp (Không dùng VirtualUser)
 local function executeKnifeSlash()
 	pcall(function()
-		-- 1. Ép nhân vật lôi dao ra từ tất cả mọi nguồn (Backpack)
 		local tool = player.Character:FindFirstChildOfClass("Tool") or player.Backpack:FindFirstChildOfClass("Tool")
 		if tool then
 			if tool.Parent ~= player.Character then tool.Parent = player.Character end
-			tool:Activate() -- Lệnh kích hoạt dùng vũ khí gốc của hệ thống Roblox
+			tool:Activate()
 		end
 		
-		-- 2. Đấu trường Knife Arena Bypass: Bắn phá Remote sự kiện chém của game Đấu trường dao
 		for _, child in ipairs(ReplicatedStorage:GetDescendants()) do
 			if child:IsA("RemoteEvent") and (string.find(string.lower(child.Name), "slash") or string.find(string.lower(child.Name), "swing") or string.find(string.lower(child.Name), "attack") or string.find(string.lower(child.Name), "knife") or string.find(string.lower(child.Name), "hit")) then
 				child:FireServer()
@@ -313,31 +309,54 @@ end
 
 task.spawn(function()
 	while true do
-		task.wait(0.12) -- Tần suất quét siêu cao (0.12 giây) để triệt hạ phòng đấu trường
+		task.wait(math.random(12, 17) / 100) 
+		
 		local target = scanKnifeTarget()
 		if target and target.Character and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
 			local tRoot = target.Character.HumanoidRootPart
 			local myRoot = player.Character.HumanoidRootPart
+			local hum = player.Character:FindFirstChildOfClass("Humanoid")
 
-			if lastTarget == target then targetStuckTimer = targetStuckTimer + 0.12 else lastTarget = target targetStuckTimer = 0 end
+			if lastTarget == target then targetStuckTimer = targetStuckTimer + 0.15 else lastTarget = target targetStuckTimer = 0 end
 
-			-- Auto Teleport ngắt quãng (Bypass bộ quét vị trí của server chống lag)
-			if states.autoTeleport and tick() - teleportTick > 0.08 then
-				myRoot.CFrame = tRoot.CFrame * CFrame.new(0, 0, 2.5) -- Đứng sát sau lưng mục tiêu
+			-- 🛠️ [Ý TƯỞNG CỦA BẠN] GỬI DỮ LIỆU CHUYỂN ĐỘNG LIÊN TỤC VỀ SERVER TRONG 0.1S (MÔ PHỎNG SPEED HỢP LỆ)
+			if states.autoTeleport and tick() - teleportTick > 0.15 then
+				local behindEnemyPos = tRoot.Position + (tRoot.CFrame.LookVector * -2.3) -- Tọa độ sau lưng địch
+				
+				-- Ép trạng thái nhân vật sang Running (Đang chạy) để hợp thức hóa dữ liệu với Server Anti-cheat
+				if hum then hum:ChangeState(Enum.HumanoidStateType.Running) end
+				
+				-- Bẻ nhỏ chuyển động thành một chuỗi vòng lặp cực nhanh gửi thông tin thay đổi tọa độ liên tục (0.01-0.02 giây mỗi chặng)
+				local duration = 0.08 -- Tổng thời gian gửi thông tin dồn dập (Dưới 0.1 giây)
+				local steps = 5
+				local startPos = myRoot.Position
+				
+				for i = 1, steps do
+					if not myRoot or not tRoot then break end
+					local alpha = i / steps
+					-- Tính toán điểm nội suy tuyến tính (Lerp Position) để tạo đường đi hợp lệ gửi về cho server nhận diện
+					local lerpedPos = startPos:Lerp(behindEnemyPos, alpha)
+					
+					-- Gán trực tiếp và ép xóa toàn bộ lực quán tính thừa tránh bị cao sọc Velocity
+					myRoot.Velocity = Vector3.new(0, 0, 0)
+					myRoot.CFrame = CFrame.new(lerpedPos, tRoot.Position)
+					
+					task.wait(duration / steps) -- Thời gian trễ siêu nhỏ (~0.016s) đồng bộ chuyển động liên tục
+				end
+				
 				teleportTick = tick()
 			end
 
-			-- Vòng lặp kích hoạt Combat Aura
+			-- Vòng lặp Combat Aura
 			if states.killAura then
 				local dist = (myRoot.Position - tRoot.Position).Magnitude
 				if dist <= states.killAuraRange then
-					camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, tRoot.Position), 0.5)
+					camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, tRoot.Position), 0.4)
 					executeKnifeSlash()
 					
 					if target.Character.Humanoid.Health <= 0 then
 						totalKillsSession = totalKillsSession + 1
 						killLabel.Text = "Kills Đã Đạt: " .. totalKillsSession
-						task.wait(0.1)
 					end
 				end
 			end
@@ -393,7 +412,7 @@ UIS.JumpRequest:Connect(function()
 end)
 
 --========================
--- 🔄 TABS CONTROL (GOM NHIỀU CHỨC NĂNG)
+-- 🔄 TABS CONTROL MANAGEMENT
 --========================
 local activeContainer = nil
 local function switchTab(tabName)
@@ -417,32 +436,29 @@ local function createTabButton(tabName)
 	tabCount = tabCount + 1
 end
 
--- 1. Xếp các chức năng vào Tab ESP Visual
+-- Khởi tạo Tab chứa nhiều chức năng
 createTabButton("Cấu Hình ESP")
 addToggle(espContainer, "Bật ESP Toàn Cục", states, "espGlobal", function() forceRefreshESP() end)
 addToggle(espContainer, "Bật Khung Mô Hình (Highlight)", states, "espHighlight", function() forceRefreshESP() end)
 addToggle(espContainer, "Bật Nhìn Thấy Tên", states, "espName", function() forceRefreshESP() end)
 addToggle(espContainer, "Bật Tính Khoảng Cách", states, "espDistance", function() forceRefreshESP() end)
 
--- 2. Xếp các chức năng vào Tab Treo Máy Đấu Trường
 createTabButton("Treo Máy Đấu Trường")
-addToggle(combatContainer, "Tự Động Áp Sát (Teleport)", states, "autoTeleport")
+addToggle(combatContainer, "Tự Động Áp Sát (Dữ Liệu Nhịp Tim)", states, "autoTeleport")
 addToggle(combatContainer, "Vòng Lặp Chém (Kill Aura)", states, "killAura")
 addToggle(combatContainer, "Kích Hoạt Giả Lag (Fake Lag)", states, "fakeLag")
 
--- 3. Xếp các chức năng vào Tab Di Chuyển
 createTabButton("Cài Đặt Di Chuyển")
 addToggle(movementContainer, "Đi Xuyên Tường (Noclip)", states, "noclip")
 addToggle(movementContainer, "Kích Hoạt Nhảy Vô Hạn", states, "infJump")
 addToggle(movementContainer, "Kích Hoạt Tự Động Bay", states, "fly")
 
--- Mặc định khởi chạy Tab ESP đầu tiên
 switchTab("Cấu Hình ESP")
 
 mini.MouseButton1Click:Connect(function() mini.Visible = false main.Visible = true end)
 close.MouseButton1Click:Connect(function() main.Visible = false mini.Visible = true end)
 
--- Hệ thống tự động vào lại phòng khi treo máy
+-- Reconnect phòng hộ khi mất kết nối
 pcall(function()
 	game:GetService("GuiService").ErrorMessageChanged:Connect(function()
 		task.wait(3) game:GetService("TeleportService"):Teleport(game.PlaceId, player)
