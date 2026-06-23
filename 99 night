@@ -1,0 +1,124 @@
+--// SERVICES
+local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local placeId = game.PlaceId
+local jobId = game.JobId
+
+--// CONFIGURATION
+local CONFIG = {
+    ChestKeywords = {"Chest", "Rương", "Diamond", "Kim Cương"}, -- Từ khóa tên rương trong game
+    DropKeywords = {"DiamondDrop", "DiamondCrystal", "Crystal"}, -- Từ khóa vật phẩm rơi ra đất
+    MaxWaitTimeBeforeHop = 15, -- Thời gian tối đa ở lại server (giây) nếu không tìm thấy rương
+    CollectRange = 25 -- Khoảng cách gom từ xa nếu dùng Tweed/Touch
+}
+
+--// 🌐 HỆ THỐNG SERVER HOP (ĐỔI SERVER TỰ ĐỘNG KHÔNG TRÙNG)
+local function serverHop()
+    local sfUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Desc&limit=100"
+    local success, result = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet(sfUrl))
+    end)
+    
+    if success and result and result.data then
+        local targetServer = nil
+        for _, server in ipairs(result.data) do
+            if server.playing < server.maxPlayers and server.id ~= jobId then
+                targetServer = server.id
+                break
+            end
+        end
+        
+        if targetServer then
+            TeleportService:TeleportToPlaceInstance(placeId, targetServer, player)
+        else
+            -- Nếu không tìm được server phù hợp, teleport ngẫu nhiên lại vào game
+            TeleportService:Teleport(placeId, player)
+        end
+    else
+        TeleportService:Teleport(placeId, player)
+    end
+end
+
+-- Tự động đổi server nếu bị kẹt hoặc mất kết nối
+player.Idled:Connect(function()
+    serverHop()
+end)
+
+--// 🔍 QUÉT VÀ XỬ LÝ RƯƠNG / KIM CƯƠNG
+local function checkKeyword(objectName, keywords)
+    for _, keyword in ipairs(keywords) do
+        if string.find(string.lower(objectName), string.lower(keyword)) then
+            return true
+        end
+    end
+    return false
+end
+
+local function scanAndCollect()
+    local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return false end
+
+    local foundSomething = false
+
+    -- 1. Quét tìm rương kim cương để mở
+    for _, v in ipairs(workspace:GetDescendants()) do
+        if v:IsA("BasePart") or v:IsA("Model") then
+            if checkKeyword(v.Name, CONFIG.ChestKeywords) then
+                local targetPart = v:IsA("Model") and (v.PrimaryPart or v:FindFirstChildWhichIsA("BasePart")) or v
+                if targetPart then
+                    foundSomething = true
+                    -- Cách 1: Dịch chuyển áp sát rương
+                    myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 2, 0)
+                    task.wait(0.3)
+                    
+                    -- Cách 2: Kích hoạt TouchInterest nếu rương yêu cầu dẫm vào
+                    local touch = targetPart:FindFirstChildWhichIsA("TouchTransmitter") or targetPart
+                    if touch then
+                        firetouchinterest(myRoot, targetPart, 0)
+                        task.wait(0.05)
+                        firetouchinterest(myRoot, targetPart, 1)
+                    end
+                end
+            end
+        end
+    end
+
+    -- 2. Quét nhặt kim cương rơi vãi dưới đất
+    for _, v in ipairs(workspace:GetDescendants()) do
+        if v:IsA("BasePart") and checkKeyword(v.Name, CONFIG.DropKeywords) then
+            foundSomething = true
+            -- Giả lập hút kim cương về phía người chơi bằng kích hoạt va chạm
+            firetouchinterest(myRoot, v, 0)
+            task.wait(0.02)
+            firetouchinterest(myRoot, v, 1)
+        end
+    end
+
+    return foundSomething
+end
+
+--// MAIN LOOP RUNNER
+task.spawn(function()
+    print("🥀 NOVA HOPPER: Đang quét tài nguyên server hiện tại...")
+    task.wait(2) -- Đợi game load map xong xuôi hẳn
+    
+    local startTime = tick()
+    local hasItems = true
+
+    while hasItems do
+        hasItems = scanAndCollect()
+        task.wait(0.5)
+        
+        -- Nếu ở lại server quá lâu mà không còn rương để đào -> Té gấp
+        if tick() - startTime > CONFIG.MaxWaitTimeBeforeHop then
+            break
+        end
+    end
+
+    print("🥀 NOVA HOPPER: Đã dọn sạch hoặc hết thời gian. Tiến hành đổi Server!")
+    serverHop()
+end)
