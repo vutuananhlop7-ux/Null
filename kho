@@ -1,521 +1,947 @@
--- LocalScript: đặt trong StarterPlayer > StarterPlayerScripts
+-- =====================================================================
+-- QuestAutoFinder v2  (LocalScript)
+-- Đặt trong: StarterPlayer > StarterPlayerScripts
+-- Chạy cùng SmartQuestGuide (script kia tự nhận các tag do script này thêm).
 --
--- CÁCH DÙNG (không cần sửa code):
---   1. Chọn Part/Model làm điểm nhiệm vụ -> thêm Tag "QuestTarget" (Tag Editor trong Studio).
---   2. (Tuỳ chọn) đặt Attributes cho nó:
---        QuestName  (string) : tên hiển thị
---        QuestOrder (number) : thứ tự nhiệm vụ (nhỏ làm trước). Cùng Order -> chọn cái gần nhất.
---        QuestRadius(number) : bán kính hoàn thành (mặc định 5 studs)
+-- Script tự tìm "điểm nhiệm vụ" bằng NHIỀU cách, rồi CHẤM ĐIỂM:
+--   1. Tên object chứa từ khoá (AntiAir, Flak, AA, SAM, PhongKhong...)
+--   2. Đọc chữ "VỊ TRÍ: ..." trên UI nhiệm vụ của game rồi khớp với tên object
+--   3. Object nằm trong Folder/Model có tên khớp
+--   4. Object có Beam/Billboard/Highlight kiểu "quest marker" của chính game
+--   5. Object có Tag/Attribute chứa từ khoá
+--   6. Cộng điểm nếu có Humanoid / Health (mục tiêu phá huỷ được)
+--   Trừ điểm nếu quá lớn (nền/bản đồ), quá nhỏ, hoặc tên kiểu Baseplate.
 --
+-- Có panel 🔍 trên màn hình (chạy tốt trên điện thoại): xem kết quả, quét lại,
+-- và bấm "Chọn" để ghim thủ công một điểm nếu tự động chọn chưa đúng.
+-- =====================================================================
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local CollectionService = game:GetService("CollectionService")
-local PathfindingService = game:GetService("PathfindingService")
-local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
--- =================================================================
+-- =====================================================================
 -- CẤU HÌNH
--- =================================================================
+-- =====================================================================
 local CONFIG = {
 	Tag = "QuestTarget",
-	DefaultRadius = 5,
-	BeamHeight = 20,
-	SpinSpeed = math.rad(120),
-	Color = Color3.fromRGB(0, 255, 255),
+	QuestBaseName = "Phòng không",
+	QuestOrder = 4,
+	QuestRadius = 8,
 
-	ShowPath = true,          -- vẽ đường đi bằng các chấm sáng
-	PathMinDistance = 15,     -- gần hơn mức này thì ẩn đường đi
-	PathRefreshTime = 2.5,    -- giây, tối thiểu giữa 2 lần tính lại
-	PathRefreshMoved = 12,    -- studs người chơi đi lệch thì tính lại
-	PathMaxDots = 40,
+	MinScore = 40,        -- đủ điểm này mới được tự động gắn tag
+	NearScore = 15,       -- từ mức này trở lên được liệt kê ở mục "Gần đúng" (để bạn tự chọn)
+	MaxTargets = 12,      -- tối đa số điểm tự gắn tag
+	MaxNear = 8,
 
-	ArrowMargin = 60,         -- px cách mép màn hình
-	FarDistance = 60,         -- xa hơn mức này: cột sáng to nhất
+	RescanInterval = 6,   -- giây, tối thiểu giữa hai lần quét tự động
+	YieldEvery = 1500,    -- nhường CPU sau mỗi N instance để không giật
+
+	Highlight = true,     -- tô sáng các điểm tìm được (chỉ thấy trên máy bạn)
+	Debug = true,         -- in chi tiết vào Output
+
+	-- Từ khoá dài: khớp nếu tên (bỏ dấu, bỏ khoảng trắng/gạch dưới, chữ thường) CHỨA từ này
+	LongKeywords = {
+		"antiair", "antiaircraft", "airdefense", "airdefence", "flak",
+		"aagun", "aasite", "aaturret", "aabattery", "aaemplacement",
+		"samsite", "phongkhong", "airdefensenode",
+	},
+	-- Từ khoá ngắn: chỉ khớp khi là MỘT TỪ riêng (tránh nhầm "Sample", "Palace"...)
+	ShortTokens = { "aa", "sam", "aad" },
+
+	-- Tên của các "marker nhiệm vụ" mà chính game có thể tự tạo
+	MarkerWords = {
+		"quest", "objective", "waypoint", "mission", "marker",
+		"beacon", "nhiemvu", "muctieu",
+	},
+	-- Tên nên bị loại
+	BadNames = { "baseplate", "terrain", "water", "ocean", "skybox", "spawnlocation" },
 }
 
--- =================================================================
--- TIỆN ÍCH
--- =================================================================
+-- =====================================================================
+-- TRẠNG THÁI
+-- =====================================================================
+local state = {
+	locText = "",       -- chữ vị trí đọc từ UI của game
+	locNorm = "",
+	locTokens = {},
+	scanning = false,
+	dirty = true,
+	lastScan = -math.huge,
+	results = {},       -- điểm hợp lệ lần quét gần nhất
+	near = {},          -- điểm gần đúng
+	tagged = {},        -- [instance] = { Score, Reasons, Name, Pinned }
+	highlights = {},    -- [instance] = Highlight
+	scanCount = 0,
+}
+local scoreCache = {}
+
+-- =====================================================================
+-- XỬ LÝ CHỮ: bỏ dấu tiếng Việt, chuẩn hoá, tách từ
+-- =====================================================================
+local charMap = {}
+do
+	local lower = {
+		a = "àáạảãâầấậẩẫăằắặẳẵ",
+		e = "èéẹẻẽêềếệểễ",
+		i = "ìíịỉĩ",
+		o = "òóọỏõôồốộổỗơờớợởỡ",
+		u = "ùúụủũưừứựửữ",
+		y = "ỳýỵỷỹ",
+		d = "đ",
+	}
+	local upper = {
+		a = "ÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴ",
+		e = "ÈÉẸẺẼÊỀẾỆỂỄ",
+		i = "ÌÍỊỈĨ",
+		o = "ÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠ",
+		u = "ÙÚỤỦŨƯỪỨỰỬỮ",
+		y = "ỲÝỴỶỸ",
+		d = "Đ",
+	}
+	for _, group in ipairs({ lower, upper }) do
+		for base, chars in pairs(group) do
+			for _, cp in utf8.codes(chars) do
+				charMap[utf8.char(cp)] = base
+			end
+		end
+	end
+end
+
+local function stripDiacritics(s)
+	local out = s:gsub(utf8.charpattern, function(ch)
+		local mapped = charMap[ch]
+		if mapped then
+			return mapped
+		end
+		local ok, cp = pcall(utf8.codepoint, ch)
+		if ok and cp >= 0x300 and cp <= 0x36F then
+			return "" -- dấu kết hợp
+		end
+		return ch
+	end)
+	return out
+end
+
+local function normalize(name)
+	local s = stripDiacritics(name):lower()
+	return (s:gsub("[^%w]", ""))
+end
+
+local function tokenSet(name)
+	local stripped = stripDiacritics(name)
+	local spaced = stripped:gsub("(%l)(%u)", "%1 %2") -- "AntiAir" -> "Anti Air"
+	local set = {}
+	for word in spaced:lower():gmatch("%a+") do
+		set[word] = true
+	end
+	return set
+end
+
+local function containsAny(norm, list)
+	for _, kw in ipairs(list) do
+		if norm:find(kw, 1, true) then
+			return kw
+		end
+	end
+	return nil
+end
+
+-- =====================================================================
+-- CHẤM ĐIỂM TÊN
+-- =====================================================================
+local function keywordScore(name)
+	local norm = normalize(name)
+	if norm == "" then
+		return 0, nil
+	end
+	local kw = containsAny(norm, CONFIG.LongKeywords)
+	if kw then
+		return 60, "tên chứa '" .. kw .. "'"
+	end
+	local tokens = tokenSet(name)
+	for _, short in ipairs(CONFIG.ShortTokens) do
+		if tokens[short] then
+			return 50, "tên có từ '" .. short .. "'"
+		end
+	end
+	return 0, nil
+end
+
+local function locationScore(name)
+	if state.locNorm == "" then
+		return 0, nil
+	end
+	local norm = normalize(name)
+	if #norm >= 6 and state.locNorm:find(norm, 1, true) then
+		return 55, "khớp vị trí quest trên UI"
+	end
+	local hits = 0
+	for word in pairs(tokenSet(name)) do
+		if #word >= 4 and state.locTokens[word] then
+			hits += 1
+		end
+	end
+	if hits >= 2 then
+		return 55, "khớp vị trí quest trên UI"
+	elseif hits == 1 then
+		return 20, "gần khớp vị trí quest"
+	end
+	return 0, nil
+end
+
+local function scoreName(name)
+	local cached = scoreCache[name]
+	if cached then
+		return cached[1], cached[2]
+	end
+	local s, r = keywordScore(name)
+	if s == 0 then
+		s, r = locationScore(name)
+	end
+	scoreCache[name] = { s, r }
+	return s, r
+end
+
+local function isMarkerName(name)
+	return containsAny(normalize(name), CONFIG.MarkerWords) ~= nil
+end
+
+local function isBadName(name)
+	return containsAny(normalize(name), CONFIG.BadNames) ~= nil
+end
+
+-- Bỏ qua các object do chính hệ thống này / SmartQuestGuide tạo
+local function isOwn(inst)
+	local n = inst.Name
+	return n:sub(1, 3) == "QF_" or n:sub(1, 12) == "QuestMarker_" or n == "QuestPathDots"
+end
+
+-- =====================================================================
+-- TIỆN ÍCH KHÁC
+-- =====================================================================
 local function getRoot()
 	local character = player.Character
 	return character and character:FindFirstChild("HumanoidRootPart")
 end
 
-local function getWalkSpeed()
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	return humanoid and humanoid.WalkSpeed or 16
-end
-
-local function instancePosition(instance)
-	if instance:IsA("BasePart") then
-		return instance.Position
-	elseif instance:IsA("Model") then
-		return instance:GetPivot().Position
-	end
-	return nil
-end
-
-local function snapToGround(position)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { player.Character }
-	local result = workspace:Raycast(position + Vector3.new(0, 5, 0), Vector3.new(0, -100, 0), params)
-	return result and (result.Position + Vector3.new(0, 0.1, 0)) or position
-end
-
-local function horizontalDistance(a, b)
-	local d = a - b
-	return Vector3.new(d.X, 0, d.Z).Magnitude
-end
-
--- =================================================================
--- GIAO DIỆN (mũi tên chỉ hướng + thông báo)
--- =================================================================
-local gui = Instance.new("ScreenGui")
-gui.Name = "QuestGuide"
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
-gui.Parent = player:WaitForChild("PlayerGui")
-
-local arrowFrame = Instance.new("Frame")
-arrowFrame.Size = UDim2.fromOffset(90, 70)
-arrowFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-arrowFrame.BackgroundTransparency = 1
-arrowFrame.Visible = false
-arrowFrame.Parent = gui
-
-local arrowLabel = Instance.new("TextLabel")
-arrowLabel.Size = UDim2.fromOffset(40, 40)
-arrowLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-arrowLabel.Position = UDim2.new(0.5, 0, 0, 20)
-arrowLabel.BackgroundTransparency = 1
-arrowLabel.Text = "➤"
-arrowLabel.TextSize = 36
-arrowLabel.TextColor3 = CONFIG.Color
-arrowLabel.TextStrokeTransparency = 0
-arrowLabel.Font = Enum.Font.SourceSansBold
-arrowLabel.Parent = arrowFrame
-
-local arrowDist = Instance.new("TextLabel")
-arrowDist.Size = UDim2.fromOffset(90, 20)
-arrowDist.AnchorPoint = Vector2.new(0.5, 0)
-arrowDist.Position = UDim2.new(0.5, 0, 0, 44)
-arrowDist.BackgroundTransparency = 1
-arrowDist.TextSize = 16
-arrowDist.TextColor3 = Color3.new(1, 1, 1)
-arrowDist.TextStrokeTransparency = 0
-arrowDist.Font = Enum.Font.SourceSansBold
-arrowDist.Parent = arrowFrame
-
-local toast = Instance.new("TextLabel")
-toast.Size = UDim2.fromOffset(400, 40)
-toast.AnchorPoint = Vector2.new(0.5, 0)
-toast.Position = UDim2.new(0.5, 0, 0, 80)
-toast.BackgroundTransparency = 1
-toast.TextTransparency = 1
-toast.TextStrokeTransparency = 1
-toast.TextSize = 26
-toast.TextColor3 = Color3.fromRGB(120, 255, 140)
-toast.TextStrokeColor3 = Color3.new(0, 0, 0)
-toast.Font = Enum.Font.SourceSansBold
-toast.Parent = gui
-
-local function showToast(text)
-	toast.Text = text
-	toast.TextTransparency = 0
-	toast.TextStrokeTransparency = 0
-	local info = TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-	task.delay(1.6, function()
-		if toast.Text == text then
-			TweenService:Create(toast, info, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
-		end
-	end)
-end
-
--- =================================================================
--- QUẢN LÝ DANH SÁCH NHIỆM VỤ
--- =================================================================
-local quests = {}
-local activeQuest = nil
-local seqCounter = 0
-
-local function getQuestPosition(quest)
-	if typeof(quest.Target) == "Vector3" then
-		return quest.Target
-	elseif typeof(quest.Target) == "Instance" and quest.Target.Parent then
-		return instancePosition(quest.Target)
-	end
-	return nil
-end
-
--- target: Instance hoặc Vector3
-local function addQuest(target, name, order, radius, onReached)
-	seqCounter += 1
-	local quest = {
-		Target = target,
-		Name = name or "Nhiệm vụ",
-		Order = order or 0,
-		Radius = radius or CONFIG.DefaultRadius,
-		OnReached = onReached,
-		Seq = seqCounter,
-	}
-	table.insert(quests, quest)
-	-- Nhiệm vụ mới ưu tiên cao hơn -> chọn lại
-	if activeQuest and quest.Order < activeQuest.Order then
-		activeQuest = nil
-	end
-	return quest
-end
-
-local function removeQuest(quest)
-	local i = table.find(quests, quest)
-	if i then
-		table.remove(quests, i)
-	end
-	if activeQuest == quest then
-		activeQuest = nil
-	end
-end
-
--- Chọn nhiệm vụ: Order nhỏ nhất, cùng Order thì gần người chơi nhất
-local function pickActive()
-	local root = getRoot()
-	local best, bestDist
-	for _, quest in ipairs(quests) do
-		local pos = getQuestPosition(quest)
-		if pos then
-			local d = root and horizontalDistance(root.Position, pos) or 0
-			if not best or quest.Order < best.Order or (quest.Order == best.Order and d < bestDist) then
-				best, bestDist = quest, d
-			end
-		end
-	end
-	return best
-end
-
--- =================================================================
--- ĐƯỜNG DẪN (Pathfinding) BẰNG CÁC CHẤM SÁNG
--- =================================================================
-local dotFolder = Instance.new("Folder")
-dotFolder.Name = "QuestPathDots"
-dotFolder.Parent = workspace
-
-local dots = {}
-local pathBusy = false
-local pathToken = 0
-local lastPathTime = 0
-local lastPathFrom = nil
-local lastPathTo = nil
-
-local function makeDot()
-	local dot = Instance.new("Part")
-	dot.Shape = Enum.PartType.Ball
-	dot.Size = Vector3.new(0.9, 0.9, 0.9)
-	dot.Anchored = true
-	dot.CanCollide = false
-	dot.CanQuery = false
-	dot.CanTouch = false
-	dot.CastShadow = false
-	dot.Material = Enum.Material.Neon
-	dot.Color = CONFIG.Color
-	dot.Transparency = 0.2
-	return dot
-end
-
-local function hidePath()
-	for _, dot in ipairs(dots) do
-		dot.Parent = nil
-	end
-end
-
-local function showPath(waypoints)
-	local step = math.max(1, math.ceil(#waypoints / CONFIG.PathMaxDots))
-	local count = 0
-	for i = 1, #waypoints, step do
-		count += 1
-		local dot = dots[count]
-		if not dot then
-			dot = makeDot()
-			dots[count] = dot
-		end
-		dot.Position = waypoints[i].Position + Vector3.new(0, 0.6, 0)
-		dot.Parent = dotFolder
-	end
-	for i = count + 1, #dots do
-		dots[i].Parent = nil
-	end
-end
-
-local function refreshPath(fromPos, toPos)
-	if pathBusy then
-		return
-	end
-	pathBusy = true
-	lastPathTime = os.clock()
-	lastPathFrom = fromPos
-	lastPathTo = toPos
-	local token = pathToken
-
-	task.spawn(function()
-		local path = PathfindingService:CreatePath({
-			AgentRadius = 2,
-			AgentHeight = 5,
-			AgentCanJump = true,
-		})
-		local ok = pcall(function()
-			path:ComputeAsync(fromPos, toPos)
+local function getPosition(inst)
+	if inst:IsA("BasePart") then
+		return inst.Position
+	elseif inst:IsA("Model") then
+		local ok, pivot = pcall(function()
+			return inst:GetPivot()
 		end)
-		-- Bỏ kết quả cũ nếu nhiệm vụ đã đổi trong lúc tính
-		if token == pathToken then
-			if ok and path.Status == Enum.PathStatus.Success then
-				showPath(path:GetWaypoints())
-			else
-				hidePath()
-			end
+		return ok and pivot.Position or nil
+	end
+	return nil
+end
+
+local function sizeOf(inst)
+	if inst:IsA("Model") then
+		local ok, s = pcall(function()
+			return inst:GetExtentsSize()
+		end)
+		return ok and s.Magnitude or 0
+	end
+	return inst.Size.Magnitude
+end
+
+local function depthOf(inst)
+	local d, p = 0, inst.Parent
+	while p do
+		d += 1
+		p = p.Parent
+	end
+	return d
+end
+
+local function isInsideCharacter(inst)
+	for _, plr in ipairs(Players:GetPlayers()) do
+		local ch = plr.Character
+		if ch and inst:IsDescendantOf(ch) then
+			return true
 		end
-		pathBusy = false
+	end
+	return false
+end
+
+local function holderOf(inst)
+	local p = inst.Parent
+	while p and p ~= Workspace do
+		if p:IsA("BasePart") or p:IsA("Model") then
+			return p
+		end
+		p = p.Parent
+	end
+	return nil
+end
+
+local function make(class, props, parent)
+	local obj = Instance.new(class)
+	for k, v in pairs(props) do
+		obj[k] = v
+	end
+	obj.Parent = parent
+	return obj
+end
+
+-- =====================================================================
+-- GIAO DIỆN PANEL
+-- =====================================================================
+local gui = make("ScreenGui", {
+	Name = "QuestFinderPanel",
+	ResetOnSpawn = false,
+	IgnoreGuiInset = true,
+	DisplayOrder = 50,
+}, playerGui)
+
+local toggleBtn = make("TextButton", {
+	Name = "Toggle",
+	Size = UDim2.fromOffset(44, 44),
+	Position = UDim2.new(0, 12, 0.45, 0),
+	BackgroundColor3 = Color3.fromRGB(20, 20, 24),
+	BackgroundTransparency = 0.15,
+	Text = "🔍",
+	TextSize = 22,
+	TextColor3 = Color3.new(1, 1, 1),
+}, gui)
+make("UICorner", { CornerRadius = UDim.new(1, 0) }, toggleBtn)
+
+local panel = make("Frame", {
+	Name = "Panel",
+	Size = UDim2.fromOffset(360, 330),
+	Position = UDim2.new(0, 64, 0.15, 0),
+	BackgroundColor3 = Color3.fromRGB(18, 20, 24),
+	BackgroundTransparency = 0.05,
+	Visible = false,
+}, gui)
+make("UICorner", { CornerRadius = UDim.new(0, 10) }, panel)
+make("UIStroke", { Color = Color3.fromRGB(0, 220, 220), Thickness = 1.5 }, panel)
+
+make("TextLabel", {
+	Size = UDim2.new(1, -16, 0, 24),
+	Position = UDim2.fromOffset(8, 6),
+	BackgroundTransparency = 1,
+	Text = "Quest Finder v2",
+	TextSize = 20,
+	Font = Enum.Font.SourceSansBold,
+	TextColor3 = Color3.fromRGB(0, 255, 255),
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, panel)
+
+local statusLabel = make("TextLabel", {
+	Size = UDim2.new(1, -16, 0, 40),
+	Position = UDim2.fromOffset(8, 32),
+	BackgroundTransparency = 1,
+	Text = "Đang quét...",
+	TextSize = 13,
+	Font = Enum.Font.SourceSans,
+	TextColor3 = Color3.fromRGB(210, 210, 210),
+	TextWrapped = true,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextYAlignment = Enum.TextYAlignment.Top,
+}, panel)
+
+local listFrame = make("ScrollingFrame", {
+	Size = UDim2.new(1, -16, 1, -122),
+	Position = UDim2.fromOffset(8, 76),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	ScrollBarThickness = 4,
+	CanvasSize = UDim2.new(0, 0, 0, 0),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+}, panel)
+make("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, listFrame)
+
+local rescanBtn = make("TextButton", {
+	Size = UDim2.new(0.5, -12, 0, 32),
+	Position = UDim2.new(0, 8, 1, -40),
+	BackgroundColor3 = Color3.fromRGB(0, 120, 130),
+	Text = "Quét lại",
+	TextSize = 16,
+	Font = Enum.Font.SourceSansBold,
+	TextColor3 = Color3.new(1, 1, 1),
+}, panel)
+make("UICorner", { CornerRadius = UDim.new(0, 6) }, rescanBtn)
+
+local closeBtn = make("TextButton", {
+	Size = UDim2.new(0.5, -12, 0, 32),
+	Position = UDim2.new(0.5, 4, 1, -40),
+	BackgroundColor3 = Color3.fromRGB(110, 40, 40),
+	Text = "Đóng",
+	TextSize = 16,
+	Font = Enum.Font.SourceSansBold,
+	TextColor3 = Color3.new(1, 1, 1),
+}, panel)
+make("UICorner", { CornerRadius = UDim.new(0, 6) }, closeBtn)
+
+-- =====================================================================
+-- GẮN / GỠ TAG + HIGHLIGHT
+-- =====================================================================
+local function addHighlight(inst)
+	if not CONFIG.Highlight or state.highlights[inst] then
+		return
+	end
+	local ok, hl = pcall(function()
+		return make("Highlight", {
+			Name = "QF_Highlight",
+			Adornee = inst,
+			FillColor = Color3.fromRGB(0, 255, 255),
+			FillTransparency = 0.7,
+			OutlineColor = Color3.new(1, 1, 1),
+			DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+		}, inst)
 	end)
+	if ok then
+		state.highlights[inst] = hl
+	end
 end
 
--- =================================================================
--- MARKER (vòng tròn + cột sáng + bảng tên) CHO NHIỆM VỤ ĐANG ACTIVE
--- =================================================================
-local marker = nil -- { Part, Beam, Label, Quest, BaseCFrame, LastPos, Angle }
-
-local function destroyMarker()
-	if marker then
-		marker.Part:Destroy()
-		marker = nil
+local function removeHighlight(inst)
+	local hl = state.highlights[inst]
+	if hl then
+		hl:Destroy()
+		state.highlights[inst] = nil
 	end
-	pathToken += 1
-	lastPathFrom, lastPathTo = nil, nil
-	hidePath()
-	arrowFrame.Visible = false
 end
 
-local function buildMarker(quest)
-	local part = Instance.new("Part")
-	part.Name = "QuestMarker_" .. quest.Name
-	part.Shape = Enum.PartType.Cylinder
-	part.Size = Vector3.new(0.2, quest.Radius * 1.6, quest.Radius * 1.6)
-	part.Anchored = true
-	part.CanCollide = false
-	part.CanQuery = false
-	part.CanTouch = false
-	part.CastShadow = false
-	part.Material = Enum.Material.Neon
-	part.Color = CONFIG.Color
-	part.Transparency = 0.3
-	part.Parent = workspace
-
-	local a0 = Instance.new("Attachment")
-	a0.Parent = part
-	local a1 = Instance.new("Attachment")
-	a1.Position = Vector3.new(CONFIG.BeamHeight, 0, 0) -- trục X cục bộ = hướng lên
-	a1.Parent = part
-
-	local beam = Instance.new("Beam")
-	beam.Attachment0 = a0
-	beam.Attachment1 = a1
-	beam.Width0 = 6
-	beam.Width1 = 2
-	beam.Color = ColorSequence.new(CONFIG.Color)
-	beam.LightEmission = 1
-	beam.FaceCamera = true
-	beam.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.3),
-		NumberSequenceKeypoint.new(1, 1),
-	})
-	beam.Parent = part
-
-	local billboard = Instance.new("BillboardGui")
-	billboard.Size = UDim2.fromOffset(220, 55)
-	billboard.StudsOffset = Vector3.new(0, 5, 0)
-	billboard.AlwaysOnTop = true
-	billboard.Parent = part
-
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.fromScale(1, 1)
-	label.BackgroundTransparency = 1
-	label.TextColor3 = Color3.new(1, 1, 1)
-	label.TextStrokeTransparency = 0
-	label.TextSize = 18
-	label.Font = Enum.Font.SourceSansBold
-	label.Text = quest.Name
-	label.Parent = billboard
-
-	marker = {
-		Part = part,
-		Beam = beam,
-		Label = label,
-		Quest = quest,
-		BaseCFrame = nil,
-		LastPos = nil,
-		Angle = 0,
-	}
+local function tagTarget(inst, name, order, info)
+	info.Name = name
+	inst:SetAttribute("QuestName", name)
+	inst:SetAttribute("QuestOrder", order)
+	inst:SetAttribute("QuestRadius", CONFIG.QuestRadius)
+	-- Gỡ rồi thêm lại để SmartQuestGuide đọc lại Attributes mới
+	if CollectionService:HasTag(inst, CONFIG.Tag) then
+		CollectionService:RemoveTag(inst, CONFIG.Tag)
+	end
+	CollectionService:AddTag(inst, CONFIG.Tag)
+	state.tagged[inst] = info
+	addHighlight(inst)
 end
 
--- =================================================================
--- MŨI TÊN CHỈ HƯỚNG KHI MỤC TIÊU NẰM NGOÀI MÀN HÌNH
--- =================================================================
-local function updateArrow(worldPos, distText)
-	local camera = workspace.CurrentCamera
-	if not camera then
-		return
+local function untag(inst)
+	if CollectionService:HasTag(inst, CONFIG.Tag) then
+		CollectionService:RemoveTag(inst, CONFIG.Tag)
 	end
-	local v, onScreen = camera:WorldToViewportPoint(worldPos + Vector3.new(0, 5, 0))
-	if onScreen then
-		arrowFrame.Visible = false
-		return
-	end
-
-	local size = camera.ViewportSize
-	local center = size / 2
-	local dir = Vector2.new(v.X, v.Y) - center
-	if v.Z < 0 then
-		dir = -dir -- mục tiêu ở phía sau camera
-	end
-	if dir.Magnitude < 1 then
-		dir = Vector2.new(0, 1)
-	end
-
-	local m = CONFIG.ArrowMargin
-	local sx = (center.X - m) / math.max(math.abs(dir.X), 1e-4)
-	local sy = (center.Y - m) / math.max(math.abs(dir.Y), 1e-4)
-	local scale = math.min(sx, sy)
-	local pos = center + dir * scale
-
-	arrowFrame.Position = UDim2.fromOffset(pos.X, pos.Y)
-	arrowLabel.Rotation = math.deg(math.atan2(dir.Y, dir.X))
-	arrowDist.Text = distText
-	arrowFrame.Visible = true
+	removeHighlight(inst)
+	state.tagged[inst] = nil
 end
 
--- =================================================================
--- VÒNG LẶP CẬP NHẬT CHÍNH
--- =================================================================
-RunService.RenderStepped:Connect(function(dt)
-	-- Chọn nhiệm vụ nếu chưa có
-	if not activeQuest then
-		activeQuest = pickActive()
-	end
+-- =====================================================================
+-- PANEL: HIỂN THỊ KẾT QUẢ + GHIM THỦ CÔNG
+-- =====================================================================
+local pin -- khai báo trước (dùng trong refreshPanel)
 
-	-- Đổi nhiệm vụ -> dựng lại marker
-	if (marker and marker.Quest ~= activeQuest) or (not activeQuest and marker) then
-		destroyMarker()
-	end
-	if activeQuest and not marker then
-		buildMarker(activeQuest)
-	end
-	if not activeQuest or not marker then
-		return
-	end
-
-	-- Target bị huỷ -> bỏ qua nhiệm vụ này
-	local targetPos = getQuestPosition(activeQuest)
-	if not targetPos then
-		removeQuest(activeQuest)
-		return
-	end
-
-	-- Marker bám theo mục tiêu (kể cả khi mục tiêu di chuyển)
-	if not marker.LastPos or (targetPos - marker.LastPos).Magnitude > 0.5 then
-		marker.LastPos = targetPos
-		marker.BaseCFrame = CFrame.new(snapToGround(targetPos)) * CFrame.Angles(0, 0, math.rad(90))
-	end
-	marker.Angle += CONFIG.SpinSpeed * dt
-
+local function distTo(inst)
 	local root = getRoot()
-	if not root then
-		marker.Part.CFrame = marker.BaseCFrame * CFrame.Angles(marker.Angle, 0, 0)
-		return
+	local pos = getPosition(inst)
+	if root and pos then
+		return (root.Position - pos).Magnitude
 	end
+	return 0
+end
 
-	local dist = horizontalDistance(root.Position, targetPos)
-
-	-- Hiển thị thông minh theo khoảng cách
-	local far = math.clamp(dist / CONFIG.FarDistance, 0, 1)      -- 0 = sát, 1 = rất xa
-	marker.Beam.Width0 = 2 + 4 * far
-	marker.Beam.Width1 = 1 + 1 * far
-	marker.Beam.Enabled = dist > activeQuest.Radius * 1.5
-	local pulseSpeed = 3 + (1 - far) * 6                          -- càng gần càng nhấp nháy nhanh
-	marker.Part.Transparency = 0.35 + 0.2 * math.sin(os.clock() * pulseSpeed)
-	marker.Part.CFrame = marker.BaseCFrame * CFrame.Angles(marker.Angle, 0, 0)
-
-	local eta = dist / math.max(getWalkSpeed(), 1)
-	local text = string.format("%.0fm", dist)
-	marker.Label.Text = string.format("%s\n[%.1fm • ~%ds]", activeQuest.Name, dist, math.ceil(eta))
-	updateArrow(targetPos, text)
-
-	-- Đường dẫn: chỉ tính lại khi cần
-	if CONFIG.ShowPath then
-		if dist > CONFIG.PathMinDistance then
-			local needRefresh = os.clock() - lastPathTime > CONFIG.PathRefreshTime
-				and (
-					not lastPathFrom
-					or (root.Position - lastPathFrom).Magnitude > CONFIG.PathRefreshMoved
-					or (lastPathTo and (targetPos - lastPathTo).Magnitude > 5)
-				)
-			if needRefresh then
-				refreshPath(root.Position, targetPos)
-			end
-		else
-			hidePath()
+local function refreshPanel()
+	for _, child in ipairs(listFrame:GetChildren()) do
+		if child:IsA("GuiObject") then
+			child:Destroy()
 		end
 	end
 
-	-- Đến nơi -> hoàn thành, chuyển sang nhiệm vụ kế tiếp
-	if dist <= activeQuest.Radius then
-		local finished = activeQuest
-		removeQuest(finished)
-		destroyMarker()
-		showToast("✔ Hoàn thành: " .. finished.Name)
-		if finished.OnReached then
-			task.spawn(finished.OnReached)
+	local order = 0
+	local function header(text)
+		order += 1
+		make("TextLabel", {
+			Size = UDim2.new(1, -6, 0, 20),
+			BackgroundTransparency = 1,
+			Text = text,
+			TextSize = 14,
+			Font = Enum.Font.SourceSansBold,
+			TextColor3 = Color3.fromRGB(255, 210, 90),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			LayoutOrder = order,
+		}, listFrame)
+	end
+
+	local function row(r, good)
+		order += 1
+		local frame = make("Frame", {
+			Size = UDim2.new(1, -6, 0, 48),
+			BackgroundColor3 = good and Color3.fromRGB(26, 56, 62) or Color3.fromRGB(38, 38, 44),
+			LayoutOrder = order,
+		}, listFrame)
+		make("UICorner", { CornerRadius = UDim.new(0, 6) }, frame)
+
+		local pinned = state.tagged[r.Inst] and state.tagged[r.Inst].Pinned
+		local reasons = {}
+		for i = 1, math.min(#r.Reasons, 2) do
+			reasons[i] = r.Reasons[i]
+		end
+		make("TextLabel", {
+			Size = UDim2.new(1, -72, 1, 0),
+			Position = UDim2.fromOffset(6, 0),
+			BackgroundTransparency = 1,
+			Text = string.format(
+				"%s%s  [%d điểm • %dm]\n%s",
+				pinned and "★ " or "",
+				r.Inst.Name,
+				r.Score,
+				distTo(r.Inst),
+				table.concat(reasons, ", ")
+			),
+			TextSize = 13,
+			Font = Enum.Font.SourceSans,
+			TextColor3 = Color3.new(1, 1, 1),
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}, frame)
+
+		local btn = make("TextButton", {
+			Size = UDim2.fromOffset(58, 30),
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -6, 0.5, 0),
+			BackgroundColor3 = Color3.fromRGB(0, 140, 90),
+			Text = "Chọn",
+			TextSize = 15,
+			Font = Enum.Font.SourceSansBold,
+			TextColor3 = Color3.new(1, 1, 1),
+		}, frame)
+		make("UICorner", { CornerRadius = UDim.new(0, 6) }, btn)
+		btn.Activated:Connect(function()
+			pin(r.Inst)
+		end)
+	end
+
+	if #state.results > 0 then
+		header("Điểm tìm được (đã gắn tag)")
+		for _, r in ipairs(state.results) do
+			row(r, true)
+		end
+	end
+	if #state.near > 0 then
+		header("Gần đúng — bấm Chọn nếu đúng")
+		for _, r in ipairs(state.near) do
+			row(r, false)
+		end
+	end
+
+	statusLabel.Text = string.format(
+		"Hợp lệ: %d • Gần đúng: %d • Lần quét: %d\nVị trí quest (UI): %s",
+		#state.results,
+		#state.near,
+		state.scanCount,
+		state.locText ~= "" and state.locText or "(chưa đọc được)"
+	)
+end
+
+pin = function(inst)
+	if not inst.Parent then
+		return
+	end
+	for _, info in pairs(state.tagged) do
+		info.Pinned = false
+	end
+	local info = state.tagged[inst] or { Score = 0, Reasons = { "chọn thủ công" }, Name = inst.Name }
+	info.Pinned = true
+	tagTarget(inst, "★ " .. (info.Name or inst.Name), 0, info)
+	refreshPanel()
+end
+
+-- =====================================================================
+-- ĐỌC CHỮ "VỊ TRÍ: ..." TỪ UI NHIỆM VỤ CỦA GAME
+-- =====================================================================
+local function isShown(obj)
+	local cur = obj
+	while cur and cur ~= playerGui do
+		if cur:IsA("GuiObject") and not cur.Visible then
+			return false
+		end
+		if cur:IsA("LayerCollector") and not cur.Enabled then
+			return false
+		end
+		cur = cur.Parent
+	end
+	return true
+end
+
+local function readQuestLocation()
+	for _, obj in ipairs(playerGui:GetDescendants()) do
+		if (obj:IsA("TextLabel") or obj:IsA("TextButton")) and obj.Text ~= "" and not obj:IsDescendantOf(gui) then
+			local raw = obj.Text:gsub("<[^>]+>", "")
+			local plain = stripDiacritics(raw):lower()
+			if plain:match("^%s*vi%s*tri%s*:") or plain:match("^%s*location%s*:") or plain:match("^%s*dia%s*diem%s*:") then
+				if isShown(obj) then
+					local value = raw:match("^[^:]*:%s*(.+)$")
+					if value then
+						return (value:gsub("^%s+", ""):gsub("%s+$", ""))
+					end
+				end
+			end
+		end
+	end
+	return ""
+end
+
+local function setLocation(text)
+	state.locText = text
+	local stripped = stripDiacritics(text):lower()
+	state.locNorm = (stripped:gsub("[^%w]", ""))
+	state.locTokens = {}
+	for word in stripped:gmatch("%a+") do
+		if #word >= 4 then
+			state.locTokens[word] = true
+		end
+	end
+	table.clear(scoreCache)
+	state.dirty = true
+end
+
+-- =====================================================================
+-- QUÉT WORKSPACE + CHẤM ĐIỂM
+-- =====================================================================
+local function scan()
+	local nameScores = {}   -- [instance] = { điểm, lý do }
+	local hasHumanoid = {}
+	local hasHealth = {}
+	local markerHits = {}
+	local attrHits = {}
+	local cands = {}
+
+	-- ---------- Lượt 1: thu thập dấu hiệu ----------
+	local descendants = Workspace:GetDescendants()
+	for i, inst in ipairs(descendants) do
+		if i % CONFIG.YieldEvery == 0 then
+			task.wait()
+		end
+		if not inst.Parent or isOwn(inst) or inst:IsA("Terrain") then
+			continue
+		end
+
+		if inst:IsA("Model") or inst:IsA("BasePart") then
+			cands[#cands + 1] = inst
+		end
+
+		local s, why = scoreName(inst.Name)
+		if s > 0 then
+			nameScores[inst] = { s, why }
+		end
+
+		if inst:IsA("Humanoid") then
+			local m = inst.Parent
+			if m then
+				hasHumanoid[m] = true
+			end
+		elseif (inst:IsA("NumberValue") or inst:IsA("IntValue")) and inst.Name:lower():find("health", 1, true) then
+			local m = inst.Parent
+			if m then
+				hasHealth[m] = true
+			end
+		elseif inst:IsA("Beam") or inst:IsA("Highlight") or inst:IsA("BillboardGui") or inst:IsA("Attachment") then
+			if isMarkerName(inst.Name) then
+				local holder = holderOf(inst)
+				if holder then
+					markerHits[holder] = true
+				end
+			end
+		end
+
+		if inst:IsA("Model") then
+			-- Tag / Attribute có sẵn của game
+			local ok = pcall(function()
+				for _, tg in ipairs(CollectionService:GetTags(inst)) do
+					if tg ~= CONFIG.Tag and keywordScore(tg) > 0 then
+						attrHits[inst] = true
+					end
+				end
+				for k, v in pairs(inst:GetAttributes()) do
+					if keywordScore(tostring(k)) > 0 or (typeof(v) == "string" and keywordScore(v) > 0) then
+						attrHits[inst] = true
+					end
+				end
+			end)
+			if not ok then
+				attrHits[inst] = nil
+			end
+		end
+	end
+
+	-- ---------- Lượt 2: chấm điểm từng ứng viên ----------
+	local scored = {}
+	for i, inst in ipairs(cands) do
+		if i % CONFIG.YieldEvery == 0 then
+			task.wait()
+		end
+		if not inst.Parent then
+			continue
+		end
+
+		local score, reasons = 0, {}
+
+		local ns = nameScores[inst]
+		if ns then
+			score += ns[1]
+			reasons[#reasons + 1] = ns[2]
+		end
+
+		-- Tên của Folder/Model cha (tối đa 3 cấp)
+		local p, depth = inst.Parent, 0
+		while p and p ~= Workspace and depth < 3 do
+			local ans = nameScores[p]
+			if ans then
+				score += math.floor(ans[1] * 0.75)
+				reasons[#reasons + 1] = "nằm trong '" .. p.Name .. "'"
+				break
+			end
+			p = p.Parent
+			depth += 1
+		end
+
+		if markerHits[inst] then
+			score += 45
+			reasons[#reasons + 1] = "có marker nhiệm vụ của game"
+		end
+		if attrHits[inst] then
+			score += 30
+			reasons[#reasons + 1] = "Tag/Attribute khớp từ khoá"
+		end
+
+		if score > 0 then
+			if hasHumanoid[inst] then
+				score += 10
+				reasons[#reasons + 1] = "có Humanoid"
+			end
+			if hasHealth[inst] then
+				score += 15
+				reasons[#reasons + 1] = "có Health"
+			end
+
+			local size = sizeOf(inst)
+			if size > 400 then
+				score -= 50
+				reasons[#reasons + 1] = "quá lớn"
+			elseif inst:IsA("BasePart") and size < 0.5 then
+				score -= 20
+				reasons[#reasons + 1] = "quá nhỏ"
+			end
+			if isBadName(inst.Name) then
+				score -= 100
+			end
+
+			local gameOwned = CollectionService:HasTag(inst, CONFIG.Tag) and not state.tagged[inst]
+			if score >= CONFIG.NearScore and not gameOwned and not isInsideCharacter(inst) then
+				scored[#scored + 1] = {
+					Inst = inst,
+					Score = score,
+					Reasons = reasons,
+					Depth = depthOf(inst),
+				}
+			end
+		end
+	end
+
+	-- ---------- Lượt 3: chọn "topmost" (cha thắng con) ----------
+	table.sort(scored, function(a, b)
+		if a.Depth ~= b.Depth then
+			return a.Depth < b.Depth
+		end
+		return a.Score > b.Score
+	end)
+
+	local accepted, near, acceptedSet = {}, {}, {}
+	for _, r in ipairs(scored) do
+		local covered = false
+		local p = r.Inst.Parent
+		while p and p ~= Workspace do
+			if acceptedSet[p] then
+				covered = true
+				break
+			end
+			p = p.Parent
+		end
+		if not covered then
+			if r.Score >= CONFIG.MinScore then
+				accepted[#accepted + 1] = r
+				acceptedSet[r.Inst] = true
+			else
+				near[#near + 1] = r
+			end
+		end
+	end
+
+	for _, r in ipairs(accepted) do
+		r.Dist = distTo(r.Inst)
+	end
+	for _, r in ipairs(near) do
+		r.Dist = distTo(r.Inst)
+	end
+
+	table.sort(accepted, function(a, b)
+		if a.Score ~= b.Score then
+			return a.Score > b.Score
+		end
+		return a.Dist < b.Dist
+	end)
+	while #accepted > CONFIG.MaxTargets do
+		local dropped = table.remove(accepted)
+		acceptedSet[dropped.Inst] = nil
+	end
+
+	table.sort(near, function(a, b)
+		if a.Score ~= b.Score then
+			return a.Score > b.Score
+		end
+		return a.Dist < b.Dist
+	end)
+	while #near > CONFIG.MaxNear do
+		table.remove(near)
+	end
+
+	-- ---------- Đồng bộ tag ----------
+	for inst, info in pairs(state.tagged) do
+		if not inst.Parent then
+			removeHighlight(inst)
+			state.tagged[inst] = nil
+		elseif not acceptedSet[inst] and not info.Pinned then
+			untag(inst)
+		end
+	end
+
+	-- Đặt tên theo thứ tự gần -> xa
+	local byDist = table.clone(accepted)
+	table.sort(byDist, function(a, b)
+		return a.Dist < b.Dist
+	end)
+	local nameIndex = 0
+	for _, r in ipairs(byDist) do
+		local existing = state.tagged[r.Inst]
+		if existing then
+			existing.Score = r.Score
+			existing.Reasons = r.Reasons
+		else
+			nameIndex += 1
+			-- tránh trùng số với tên đã dùng
+			local used = 0
+			for _ in pairs(state.tagged) do
+				used += 1
+			end
+			tagTarget(r.Inst, CONFIG.QuestBaseName .. " " .. (used + 1), CONFIG.QuestOrder, {
+				Score = r.Score,
+				Reasons = r.Reasons,
+				Pinned = false,
+			})
+		end
+	end
+
+	state.results = accepted
+	state.near = near
+	state.scanCount += 1
+
+	if CONFIG.Debug then
+		print(string.format("[QuestAutoFinder] Quét #%d xong: %d hợp lệ, %d gần đúng. Vị trí quest UI: '%s'",
+			state.scanCount, #accepted, #near, state.locText))
+		for i, r in ipairs(accepted) do
+			local pos = getPosition(r.Inst)
+			print(string.format("  #%d [%d điểm] %s @ (%.0f, %.0f, %.0f)  — %s",
+				i, r.Score, r.Inst:GetFullName(),
+				pos and pos.X or 0, pos and pos.Y or 0, pos and pos.Z or 0,
+				table.concat(r.Reasons, "; ")))
+		end
+		for i, r in ipairs(near) do
+			print(string.format("  ~%d [%d điểm] %s — %s", i, r.Score, r.Inst:GetFullName(), table.concat(r.Reasons, "; ")))
+		end
+	end
+end
+
+local function safeScan()
+	if state.scanning then
+		return
+	end
+	state.scanning = true
+	state.dirty = false
+	statusLabel.Text = "Đang quét workspace..."
+	local ok, err = pcall(scan)
+	state.scanning = false
+	state.lastScan = os.clock()
+	if not ok then
+		warn("[QuestAutoFinder] Lỗi khi quét: " .. tostring(err))
+		statusLabel.Text = "Lỗi khi quét (xem Output)."
+		return
+	end
+	refreshPanel()
+	-- Không tìm thấy gì -> tự mở panel để bạn thấy
+	if #state.results == 0 and state.scanCount == 1 then
+		panel.Visible = true
+	end
+	if #state.results == 0 and CONFIG.Debug then
+		warn("[QuestAutoFinder] Không có điểm nào đủ điểm. Cấu trúc workspace (để xem tên thật):")
+		for _, child in ipairs(Workspace:GetChildren()) do
+			if not child:IsA("Terrain") and not child:IsA("Camera") and not isOwn(child) then
+				local names = {}
+				for i, c in ipairs(child:GetChildren()) do
+					if i > 8 then
+						names[#names + 1] = "..."
+						break
+					end
+					names[#names + 1] = c.Name
+				end
+				print(string.format("  %s [%s] -> %s", child.Name, child.ClassName, table.concat(names, ", ")))
+			end
+		end
+	end
+end
+
+-- =====================================================================
+-- SỰ KIỆN + VÒNG LẶP CHÍNH
+-- =====================================================================
+toggleBtn.Activated:Connect(function()
+	panel.Visible = not panel.Visible
+	if panel.Visible then
+		refreshPanel()
+	end
+end)
+
+closeBtn.Activated:Connect(function()
+	panel.Visible = false
+end)
+
+rescanBtn.Activated:Connect(function()
+	setLocation(readQuestLocation())
+	task.spawn(safeScan)
+end)
+
+-- Có object liên quan xuất hiện (streaming, spawn động) -> đánh dấu cần quét lại
+Workspace.DescendantAdded:Connect(function(inst)
+	if isOwn(inst) then
+		return
+	end
+	if inst:IsA("Model") or inst:IsA("BasePart") or inst:IsA("Beam") or inst:IsA("BillboardGui") or inst:IsA("Highlight") then
+		if scoreName(inst.Name) > 0 or isMarkerName(inst.Name) then
+			state.dirty = true
 		end
 	end
 end)
 
--- =================================================================
--- TỰ PHÁT HIỆN NHIỆM VỤ QUA COLLECTIONSERVICE TAG
--- =================================================================
-local tagged = {} -- instance -> quest
-
-local function onTagAdded(instance)
-	if tagged[instance] then
-		return
+-- Mục tiêu bị xoá -> dọn tag/highlight
+Workspace.DescendantRemoving:Connect(function(inst)
+	if state.tagged[inst] then
+		removeHighlight(inst)
+		state.tagged[inst] = nil
+		state.dirty = true
 	end
-	tagged[instance] = addQuest(
-		instance,
-		instance:GetAttribute("QuestName") or instance.Name,
-		instance:GetAttribute("QuestOrder") or 0,
-		instance:GetAttribute("QuestRadius") or CONFIG.DefaultRadius,
-		function()
-			print("Hoàn thành nhiệm vụ:", instance.Name)
+end)
+
+task.spawn(function()
+	while true do
+		local loc = readQuestLocation()
+		if loc ~= state.locText then
+			setLocation(loc)
 		end
-	)
-end
-
-local function onTagRemoved(instance)
-	local quest = tagged[instance]
-	if quest then
-		tagged[instance] = nil
-		removeQuest(quest)
+		if state.dirty and not state.scanning and os.clock() - state.lastScan >= CONFIG.RescanInterval then
+			safeScan()
+		end
+		task.wait(1)
 	end
-end
-
-CollectionService:GetInstanceAddedSignal(CONFIG.Tag):Connect(onTagAdded)
-CollectionService:GetInstanceRemovedSignal(CONFIG.Tag):Connect(onTagRemoved)
-for _, instance in ipairs(CollectionService:GetTagged(CONFIG.Tag)) do
-	onTagAdded(instance)
-end
-
--- =================================================================
--- (TUỲ CHỌN) THÊM NHIỆM VỤ BẰNG CODE — bỏ comment để thử
--- =================================================================
--- addQuest(Vector3.new(10, 3, 20), "Điểm Khám Phá Mới", 1, 6, function()
--- 	print("Đã khám phá điểm mới!")
--- end)
+end)
