@@ -1,0 +1,97 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local rootPart = character:WaitForChild("HumanoidRootPart")
+
+-- =================================================================
+-- HÀM TẠO VÒNG TRÒN VÀ ĐỂM ĐÁNH DẤU NHIỆM VỤ
+-- =================================================================
+local function createQuestMarker(targetPosition, questName)
+    -- 1. Tạo Part nền làm vòng tròn dưới đất
+    local markerPart = Instance.new("Part")
+    markerPart.Name = "QuestMarker_" .. (questName or "Task")
+    markerPart.Shape = Enum.PartType.Cylinder
+    markerPart.Size = Vector3.new(0.2, 8, 8) -- Độ dày 0.2, đường kính 8 studs
+    markerPart.CFrame = CFrame.new(targetPosition) * CFrame.Angles(0, 0, math.rad(90)) -- Nằm bệt xuống đất
+    markerPart.Anchored = true
+    markerPart.CanCollide = false
+    markerPart.Material = Enum.Material.Neon
+    markerPart.Color = Color3.fromRGB(0, 255, 255) -- Màu xanh neon sáng
+    markerPart.Transparency = 0.3
+    markerPart.Parent = workspace
+
+    -- 2. Tạo hiệu ứng Cột Sáng (Beam/Light) bốc lên trời
+    local attachment0 = Instance.new("Attachment", markerPart)
+    local attachment1 = Instance.new("Attachment", markerPart)
+    attachment1.Position = Vector3.new(20, 0, 0) -- Độ cao cột sáng
+
+    local beam = Instance.new("Beam")
+    beam.Attachment0 = attachment0
+    beam.Attachment1 = attachment1
+    beam.Width0 = 6
+    beam.Width1 = 2
+    beam.Color = ColorSequence.new(Color3.fromRGB(0, 255, 255))
+    beam.FaceCamera = true
+    beam.Transparency = NumberSequence.new(0.4)
+    beam.Parent = markerPart
+
+    -- 3. Tạo Bảng Tên & Khoảng Cách nổi trên không (BillboardGui)
+    local billboard = Instance.new("BillboardGui")
+    billboard.Size = UDim2.new(0, 200, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 5, 0) -- Nổi cao hơn mặt đất 5 studs
+    billboard.AlwaysOnTop = true
+    billboard.Parent = markerPart
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, 0, 1, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textLabel.TextStrokeTransparency = 0
+    textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    textLabel.TextSize = 18
+    textLabel.Font = Enum.Font.SourceSansBold
+    textLabel.Text = (questName or "Nhiệm vụ") .. "\n[--m]"
+    textLabel.Parent = billboard
+
+    -- 4. Vòng lặp cập nhật: Xoay vòng tròn, tính khoảng cách & tự xóa khi đến nơi
+    local renderConnection
+    renderConnection = RunService.RenderStepped:Connect(function()
+        if not markerPart or not markerPart.Parent or not rootPart then
+            renderConnection:Disconnect()
+            return
+        end
+
+        -- Xoay nhẹ vòng tròn cho sinh động
+        markerPart.CFrame = markerPart.CFrame * CFrame.Angles(math.rad(2), 0, 0)
+
+        -- Tính khoảng cách từ người chơi đến vị trí làm nhiệm vụ
+        local distance = (rootPart.Position - targetPosition).Magnitude
+        textLabel.Text = string.format("%s\n[%.1fm]", questName or "Vị trí nhiệm vụ", distance)
+
+        -- Nếu người chơi đi vào vòng tròn (khoảng cách < 5 studs) -> Tự động xoá hiệu ứng
+        if distance <= 5 then
+            print("Đã đến điểm làm nhiệm vụ!")
+            renderConnection:Disconnect()
+            markerPart:Destroy()
+        end
+    end)
+
+    return markerPart
+end
+
+-- =================================================================
+-- VÍ DỤ CÁCH SỬ DỤNG
+-- =================================================================
+-- Tìm Part/Vị trí cần đến
+local targetPart = workspace:FindFirstChild("NhiemVu_Target", true)
+
+if targetPart then
+    -- Đánh dấu vị trí nhiệm vụ
+    createQuestMarker(targetPart.Position, "Tiêu diệt 5 Quái Vật")
+else
+    -- Nếu không có Part mẫu, tạo thử tại tọa độ ví dụ (X=10, Y=3, Z=20)
+    local samplePos = Vector3.new(10, 3, 20)
+    createQuestMarker(samplePos, "Điểm Khám Phá Mới")
+end
