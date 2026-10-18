@@ -4866,11 +4866,13 @@ document.head.insertAdjacentHTML('beforeend',`<style>
 #pyrV{position:fixed;inset:0;background:#000;z-index:2147483600}.pyrH{position:absolute;inset:0}
 .pyrHud{position:absolute;left:0;right:0;top:38%;text-align:center;color:#26F0FF;font:700 22px/1.5 sans-serif;pointer-events:none;text-shadow:0 0 12px #26F0FF}
 .pyrX{position:absolute;top:8px;left:8px;z-index:2;background:#1b1540;color:#fff;border:1px solid #26F0FF;border-radius:8px;padding:6px 12px;font:14px sans-serif}
-#pyrP{position:fixed;right:12px;top:12px;width:300px;max-height:92vh;overflow:auto;z-index:2147483500;background:rgba(10,7,33,.94);border:1px solid #26F0FF;border-radius:12px;color:#fff;font:13px/1.45 sans-serif;padding:10px;box-shadow:0 0 30px rgba(38,240,255,.25)}
+#pyrP{position:fixed;right:12px;top:12px;width:300px;max-width:92vw;max-height:92vh;overflow:auto;z-index:2147483500;background:rgba(10,7,33,.94);border:1px solid #26F0FF;border-radius:12px;color:#fff;font:13px/1.45 sans-serif;padding:10px;box-shadow:0 0 30px rgba(38,240,255,.25)}
 #pyrP h4{margin:2px 0 8px;font-size:14px;color:#26F0FF}#pyrP .g{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0}
 #pyrP button{background:#1b1540;color:#fff;border:1px solid #3a2f8f;border-radius:8px;padding:7px 4px;font:12.5px sans-serif;cursor:pointer}#pyrP button:hover{border-color:#26F0FF}#pyrP button.on{background:#0e5b66;border-color:#26F0FF}
 #pyrP input[type=text]{width:100%;box-sizing:border-box;background:#0b0826;color:#fff;border:1px solid #3a2f8f;border-radius:8px;padding:7px;font-size:15px;letter-spacing:4px;text-align:center}
 #pyrP label{display:block;margin:5px 0 0;opacity:.85}#pyrP input[type=range]{width:100%}#pyrP .st{opacity:.8;font-size:12px;margin:4px 0}
+#pyrFab{position:fixed;right:12px;bottom:72px;z-index:2147483450;display:flex;flex-direction:column;gap:8px}#pyrFab button{width:48px;height:48px;border-radius:50%;background:#0e5b66;color:#fff;border:2px solid #26F0FF;font-size:22px;box-shadow:0 0 16px rgba(38,240,255,.5)}
+@media (pointer:coarse){#pyrP{left:50%;right:auto;top:8px;transform:translateX(-50%);width:340px}}
 #smartTag{position:fixed;left:12px;bottom:12px;z-index:2147483400;background:rgba(10,7,33,.85);color:#26F0FF;border:1px solid #26F0FF;border-radius:999px;padding:5px 12px;font:12px sans-serif;display:none}
 </style>`);
 
@@ -4957,18 +4959,18 @@ async function receiver(){
 /* ---------- MÁY 1: điều khiển ---------- */
 const PYR={ctl:false,sT:0,pp:'none',eff:['swirl','burst','rain','dissolve'],ei:0,smart:false,auto:false,tm:0,
   S:{az:0,el:8,dist:3.4,spin:18,size:.95,gap:.1,flip:0,guide:0},
-  mdl(){return (typeof FOCUS!=='undefined'&&FOCUS.on&&FOCUS.e&&FOCUS.e.type==='model3d')?FOCUS.e:(P.sl&&P.sl.els.find(x=>x.type==='model3d'))},
+  mdl(){if(P.on&&FOCUS.on&&FOCUS.e&&FOCUS.e.type==='model3d')return FOCUS.e;const sl=(P.on&&P.sl)?P.sl:S();return sl.els.find(x=>x.type==='model3d')},
   async sendModel(){const e=this.mdl();if(!e||!NET.open())return false;const m=MEDIA[e.media];NET.send({t:'model',name:m.name,buf:await m.blob.arrayBuffer()});this.sync(1);return true},
   async local(){const e=this.mdl();if(!e){toast('Slide này chưa có mô hình 3D — thêm bằng nút 3D rồi thử lại',4000);return}
     closeV();V=overlay();scr=new PyrScreen(V.querySelector('.pyrH'));Object.assign(scr.S,this.S);try{scr.setModel(await getModel(e.media))}catch(x){hud(x.message)}},
   sync(force){const now=performance.now();if(!force&&now-this.sT<40)return;this.sT=now;if(scr)Object.assign(scr.S,this.S);NET.send({t:'st',s:this.S})},
-  fx(n){if(scr)scr.fx(n);NET.send({t:'fx',n});flashMsg('✦ '+({dissolve:'Tan rã',swirl:'Xoáy hạt',burst:'Nổ tung',rain:'Mưa hạt',assemble:'Tái tạo',pulse:'Nhịp'}[n]||n))},
+  fx(n){if(scr)scr.fx(n);NET.send({t:'fx',n});(P.on?flashMsg:toast)('✦ '+({dissolve:'Tan rã',swirl:'Xoáy hạt',burst:'Nổ tung',rain:'Mưa hạt',assemble:'Tái tạo',pulse:'Nhịp'}[n]||n))},
   panel(){
-    if(!P.on)return;let p=$('#pyrP');if(p){p.remove();this.ctl=false;return}
+    let p=$('#pyrP');if(p){p.remove();this.ctl=false;return}
     p=document.createElement('div');p.id='pyrP';this.ctl=true;
-    p.innerHTML=`<h4>🔺 Kim tự tháp · Pepper's Ghost <button data-a="x" style="float:right;padding:1px 8px">✕</button></h4>
+    p.innerHTML=`<h4>🔺 Máy 1 · Điều khiển <button data-a="x" style="float:right;padding:1px 8px">✕</button></h4>
 <div class="g"><button data-a="local">📺 Chiếu tại máy này</button><button data-a="hand">🖐 Điều khiển tay</button></div>
-<div class="st">📱 Máy 2: mở Nova → nút “📱 Máy chiếu” → nhập mã</div><input type="text" id="pyrCode" maxlength="4" placeholder="Mã 4 số"><div class="g"><button data-a="join">🔗 Kết nối máy 2</button><button data-a="model">📤 Gửi mô hình</button></div>
+<div class="st">📱 Trên máy 2 bấm nút 📱 (Máy chiếu) để lấy mã 4 số, rồi nhập vào ô dưới đây:</div><input type="text" id="pyrCode" maxlength="4" placeholder="Mã 4 số"><div class="g"><button data-a="join">🔗 Kết nối máy 2</button><button data-a="model">📤 Gửi mô hình</button></div>
 <div class="st" id="pyrSt">Chưa kết nối</div>
 <h4>Hiệu ứng hạt nano</h4><div class="g"><button data-f="dissolve">💥 Tan rã</button><button data-f="assemble">🧬 Tái tạo</button><button data-f="swirl">🌀 Xoáy</button><button data-f="burst">✨ Nổ</button><button data-f="rain">🌧 Mưa hạt</button><button data-f="pulse">💓 Nhịp</button></div>
 <label>Kích thước <input type="range" data-k="size" min=".5" max="1" step=".01" value="${this.S.size}"></label>
@@ -4982,7 +4984,7 @@ const PYR={ctl:false,sT:0,pp:'none',eff:['swirl','burst','rain','dissolve'],ei:0
       if(d.t){this.S[d.t]=this.S[d.t]?0:1;b.classList.toggle('on',!!this.S[d.t]);return this.sync(1)}
       if(d.a==='x'){p.remove();this.ctl=false}
       else if(d.a==='local')this.local();
-      else if(d.a==='hand'){if(HandCtl.on){HandCtl.stop()}else HandCtl.start();b.classList.toggle('on')}
+      else if(d.a==='hand'){if(!P.on)return toast('Hãy vào chế độ trình chiếu (F5) rồi bật điều khiển tay',4000);if(HandCtl.on){HandCtl.stop()}else HandCtl.start();b.classList.toggle('on')}
       else if(d.a==='join'){const c=$('#pyrCode').value.trim();if(!/^\d{4}$/.test(c))return toast('Nhập đúng mã 4 số trên máy 2');$('#pyrSt').textContent='Đang kết nối…';
         NET.join(c,async()=>{$('#pyrSt').textContent='✅ Đã nối máy 2';await this.sendModel()},e=>{$('#pyrSt').textContent='Lỗi: '+(e.type||e.message)})}
       else if(d.a==='model'){this.sendModel().then(ok=>toast(ok?'Đã gửi mô hình sang máy 2':'Chưa kết nối hoặc slide không có mô hình 3D'))}
@@ -5018,7 +5020,9 @@ const _pc=presClose;presClose=function(){const p=$('#pyrP');if(p)p.remove();PYR.
 const b=document.createElement('button');b.className='b';b.id='bPyr';b.textContent='🔺 Kim tự tháp';b.title="Chiếu mô hình 3D lên kim tự tháp Pepper's Ghost, điều khiển bằng tay, kết nối máy thứ 2";
 const b2=document.createElement('button');b2.className='b';b2.id='bPyr2';b2.textContent='📱 Máy chiếu';b2.title='Dùng thiết bị này làm màn hình chiếu kim tự tháp (máy thứ 2)';
 $('#bHolo').after(b,b2);
-b.onclick=()=>{if(!P.on){presOpen(cur);setTimeout(()=>PYR.panel(),400)}else PYR.panel()};b2.onclick=receiver;
+b.onclick=()=>PYR.panel();b2.onclick=receiver;
+document.body.insertAdjacentHTML('beforeend','<div id="pyrFab"><button id="fabC" title="Máy 1: điều khiển / nhập mã">🔺</button><button id="fabR" title="Máy 2: làm máy chiếu">📱</button></div>');
+$('#fabC').onclick=()=>PYR.panel();$('#fabR').onclick=receiver;
 window.PYR=PYR;
 })();
 
