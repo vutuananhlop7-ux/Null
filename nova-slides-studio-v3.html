@@ -1209,7 +1209,7 @@ function renderDesign(){
     }
     if(e.type==='model3d'){
       const m=MEDIA[e.media];
-      h+=`<div class="grp">Mô hình 3D</div><canvas id="mvCanvas" width="640" height="380"></canvas><div class="hint">Kéo để xoay · cuộn để thu phóng. Góc nhìn này là ảnh bìa trên slide.${m?' · '+esc(m.name)+' · '+fmtSize(m.size):''}</div>`+fld('Tự xoay khi trình chiếu '+(e.spin||0),inp('e','spin','range',e.spin||0,'min="0" max="3" step="0.1"'))+fld('Độ sáng '+(e.lit||1),inp('e','lit','range',e.lit||1,'min="0.3" max="2" step="0.1"'))+`<div class="hint">Trình chiếu trong Nova: mô hình xoay tương tác trực tiếp (WebGL). Xuất PPTX: ảnh chụp đúng góc nhìn đang chọn (PowerPoint chỉ hỗ trợ 3D bản địa dạng .glb riêng của Office).</div>`;
+      h+=`<div class="grp">Mô hình 3D</div><canvas id="mvCanvas" width="640" height="380"></canvas><div class="hint">Kéo để xoay · cuộn để thu phóng. Góc nhìn này là ảnh bìa trên slide.${m?' · '+esc(m.name)+' · '+fmtSize(m.size):''}</div>`+fld('Tự xoay khi trình chiếu '+(e.spin||0),inp('e','spin','range',e.spin||0,'min="0" max="3" step="0.1"'))+fld('Độ sáng '+(e.lit||1),inp('e','lit','range',e.lit||1,'min="0.3" max="2" step="0.1"'))+fld('Độ bóng '+(e.gloss==null?.6:e.gloss),inp('e','gloss','range',e.gloss==null?.6:e.gloss,'min="0" max="1" step=".05"'))+fld('Chiều sâu '+(e.deep==null?.6:e.deep),inp('e','deep','range',e.deep==null?.6:e.deep,'min="0" max="1" step=".05"'))+`<div class="hint">Trình chiếu trong Nova: mô hình xoay tương tác trực tiếp (WebGL). Xuất PPTX: ảnh chụp đúng góc nhìn đang chọn (PowerPoint chỉ hỗ trợ 3D bản địa dạng .glb riêng của Office).</div>`;
       setTimeout(()=>mountPanelView(e),0);
     }
     if(e.chart){const c0=e.chart;
@@ -1293,7 +1293,7 @@ function onField(ev){
   if(t.dataset.o==='e'&&STYLE_KEYS.includes(k)&&selIds().length>1)selEls().forEach(x=>{if(x!==obj){x[k]=v;redrawEl(x)}});
   const o=t.dataset.o;
   if(o==='c'){const ce=selEl();if(ce)regenPoster(ce)}
-  if(o==='e'){redrawEl(obj);drawSel();syncFields();thumbsLater();if(obj.chart&&(k==='w'||k==='h'))regenPoster(obj);if(obj.type==='model3d'&&(k==='lit'||k==='w'||k==='h')){regenPoster(obj);if(panelView&&k==='lit')panelView.cfg&&(panelView.cfg.lit=obj.lit)}}
+  if(o==='e'){redrawEl(obj);drawSel();syncFields();thumbsLater();if(obj.chart&&(k==='w'||k==='h'))regenPoster(obj);if(obj.type==='model3d'&&(k==='lit'||k==='gloss'||k==='deep'||k==='w'||k==='h')){regenPoster(obj);if(panelView&&(k==='lit'||k==='gloss'||k==='deep')&&panelView.cfg){panelView.cfg[k]=obj[k];panelView.dirty=true}}}
   else if(o==='bg'){renderStage();thumbsLater()}
   else if(o==='a'){renderTL()}
   if(final){snap();thumbsLater();
@@ -1454,10 +1454,24 @@ const M4={
 const I4=()=>new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
 
 /* ---------- phân tích tệp 3D ---------- */
-function flatNormals(pos,idx){ // bỏ chỉ mục, tính pháp tuyến mặt
-  const n=idx?idx.length:pos.length/3,P=new Float32Array(n*3),N=new Float32Array(n*3);
+function flatNormals(pos,idx){ // tách chỉ mục + pháp tuyến mượt theo góc gập (cạnh sắc vẫn sắc)
+  const n=idx?idx.length:pos.length/3,P=new Float32Array(n*3),N=new Float32Array(n*3),F=n/3|0,FN=new Float32Array(F*3);
   for(let i=0;i<n;i++){const k=idx?idx[i]:i;P[i*3]=pos[k*3];P[i*3+1]=pos[k*3+1];P[i*3+2]=pos[k*3+2]}
-  for(let i=0;i<n;i+=3){const ax=P[i*3+3]-P[i*3],ay=P[i*3+4]-P[i*3+1],az=P[i*3+5]-P[i*3+2],bx=P[i*3+6]-P[i*3],by=P[i*3+7]-P[i*3+1],bz=P[i*3+8]-P[i*3+2];let nx=ay*bz-az*by,ny=az*bx-ax*bz,nz=ax*by-ay*bx;const l=Math.hypot(nx,ny,nz)||1;nx/=l;ny/=l;nz/=l;for(let j=0;j<3;j++){N[(i+j)*3]=nx;N[(i+j)*3+1]=ny;N[(i+j)*3+2]=nz}}
+  for(let f=0;f<F;f++){const i=f*3,ax=P[i*3+3]-P[i*3],ay=P[i*3+4]-P[i*3+1],az=P[i*3+5]-P[i*3+2],bx=P[i*3+6]-P[i*3],by=P[i*3+7]-P[i*3+1],bz=P[i*3+8]-P[i*3+2];
+    FN[f*3]=ay*bz-az*by;FN[f*3+1]=az*bx-ax*bz;FN[f*3+2]=ax*by-ay*bx}   // chưa chuẩn hóa: độ dài = 2×diện tích
+  const unit=(f)=>{const l=Math.hypot(FN[f*3],FN[f*3+1],FN[f*3+2])||1;return[FN[f*3]/l,FN[f*3+1]/l,FN[f*3+2]/l]};
+  if(F<=400000){
+    let x0=1e30,y0=1e30,z0=1e30,x1=-1e30,y1=-1e30,z1=-1e30;
+    for(let i=0;i<n;i++){const x=P[i*3],y=P[i*3+1],z=P[i*3+2];if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;if(z<z0)z0=z;if(z>z1)z1=z}
+    const q=1/(Math.max(x1-x0,y1-y0,z1-z0,1e-9)*1e-5),map=new Map();
+    for(let i=0;i<n;i++){const k=Math.round((P[i*3]-x0)*q)+','+Math.round((P[i*3+1]-y0)*q)+','+Math.round((P[i*3+2]-z0)*q);let a=map.get(k);if(!a)map.set(k,a=[]);a.push(i)}
+    const CR=Math.cos(52*Math.PI/180);
+    for(const a of map.values()){
+      for(const i of a){const f=(i/3)|0,u=unit(f);let sx=0,sy=0,sz=0;
+        for(const j of a){const g=(j/3)|0;if(g!==f){const v=unit(g);if(u[0]*v[0]+u[1]*v[1]+u[2]*v[2]<CR)continue}sx+=FN[g*3];sy+=FN[g*3+1];sz+=FN[g*3+2]}
+        const l=Math.hypot(sx,sy,sz)||1;N[i*3]=sx/l;N[i*3+1]=sy/l;N[i*3+2]=sz/l}
+    }
+  }else for(let f=0;f<F;f++){const u=unit(f);for(let j=0;j<3;j++){N[(f*3+j)*3]=u[0];N[(f*3+j)*3+1]=u[1];N[(f*3+j)*3+2]=u[2]}}
   return{pos:P,nor:N};
 }
 function finishModel(meshes,name){
@@ -1477,7 +1491,7 @@ function parseSTL(buf,name){
   else{const n=dv.getUint32(80,true);pos=new Float32Array(n*9);for(let i=0;i<n;i++)for(let v=0;v<3;v++)for(let k=0;k<3;k++)pos[i*9+v*3+k]=dv.getFloat32(84+i*50+12+v*12+k*4,true)}
   for(let i=0;i<pos.length;i+=3){const y=pos[i+1],z=pos[i+2];pos[i+1]=z;pos[i+2]=-y} // Z-up → Y-up
   const f=flatNormals(pos,null),idx=new Uint32Array(pos.length/3);for(let i=0;i<idx.length;i++)idx[i]=i;
-  return finishModel([{pos:f.pos,nor:f.nor,uv:null,idx,color:[.55,.78,1,1],tex:null}],name);
+  return finishModel([{pos:f.pos,nor:f.nor,uv:null,idx,color:[.55,.78,1,1],tex:null,metal:.25,rough:.38}],name);
 }
 function parseOBJ(text,name){
   const P=[],N=[],T=[],pos=[],nor=[],uv=[],idx=[],map=new Map();let hasN=true;
@@ -1499,8 +1513,8 @@ function parseOBJ(text,name){
   }
   if(!idx.length)throw new Error('Không có mặt nào trong tệp OBJ');
   let m;
-  if(hasN)m={pos:new Float32Array(pos),nor:new Float32Array(nor),uv:null,idx:new Uint32Array(idx),color:[.78,.8,.9,1],tex:null};
-  else{const f=flatNormals(pos,idx),ix=new Uint32Array(idx.length);for(let i=0;i<ix.length;i++)ix[i]=i;m={pos:f.pos,nor:f.nor,uv:null,idx:ix,color:[.78,.8,.9,1],tex:null}}
+  if(hasN)m={pos:new Float32Array(pos),nor:new Float32Array(nor),uv:null,idx:new Uint32Array(idx),color:[.78,.8,.9,1],tex:null,metal:.15,rough:.4};
+  else{const f=flatNormals(pos,idx),ix=new Uint32Array(idx.length);for(let i=0;i<ix.length;i++)ix[i]=i;m={pos:f.pos,nor:f.nor,uv:null,idx:ix,color:[.78,.8,.9,1],tex:null,metal:.15,rough:.4}}
   return finishModel([m],name);
 }
 const CT={5120:[Int8Array,1,'getInt8',127],5121:[Uint8Array,1,'getUint8',255],5122:[Int16Array,2,'getInt16',32767],5123:[Uint16Array,2,'getUint16',65535],5125:[Uint32Array,4,'getUint32',1],5126:[Float32Array,4,'getFloat32',1]};
@@ -1541,13 +1555,13 @@ async function parseGLTF(json,bufs,name){
       const P=new Float32Array(pos.length),Nn=new Float32Array(nor.length);
       for(let i=0;i<pos.length;i+=3){const x=pos[i],y=pos[i+1],z=pos[i+2];P[i]=W[0]*x+W[4]*y+W[8]*z+W[12];P[i+1]=W[1]*x+W[5]*y+W[9]*z+W[13];P[i+2]=W[2]*x+W[6]*y+W[10]*z+W[14];
         const a=nor[i],b=nor[i+1],c=nor[i+2];let nx=W[0]*a+W[4]*b+W[8]*c,ny=W[1]*a+W[5]*b+W[9]*c,nz=W[2]*a+W[6]*b+W[10]*c;const l=Math.hypot(nx,ny,nz)||1;Nn[i]=nx/l;Nn[i+1]=ny/l;Nn[i+2]=nz/l}
-      let color=[.8,.8,.85,1],tex=null;
+      let color=[.8,.8,.85,1],tex=null,metal=.1,rough=.5;
       const mat=p.material!==undefined&&json.materials?json.materials[p.material]:null;
       if(mat){const pb=mat.pbrMetallicRoughness||{},sg=mat.extensions&&mat.extensions.KHR_materials_pbrSpecularGlossiness;
         const bf=(sg&&sg.diffuseFactor)||pb.baseColorFactor;if(bf)color=bf.slice();
         const bt=(sg&&sg.diffuseTexture)||pb.baseColorTexture;if(bt&&uv)tex=await getImg(bt.index);
-        if(mat.alphaMode!=='BLEND')color[3]=1;if(!tex&&!bf)color=[.8,.8,.85,1]}
-      meshes.push({pos:P,nor:Nn,uv:tex?uv:null,idx:idx instanceof Uint32Array?idx:new Uint32Array(idx),color,tex});
+        if(mat.alphaMode!=='BLEND')color[3]=1;if(!tex&&!bf)color=[.8,.8,.85,1];metal=Math.min(.92,pb.metallicFactor!=null?pb.metallicFactor:.1);rough=pb.roughnessFactor!=null?pb.roughnessFactor:.5}
+      meshes.push({pos:P,nor:Nn,uv:tex?uv:null,idx:idx instanceof Uint32Array?idx:new Uint32Array(idx),color,tex,metal,rough});
     }
   }
   if(!meshes.length)throw new Error('Không tìm thấy hình học trong tệp');
@@ -1572,24 +1586,68 @@ async function parseModel(m){
 async function getModel(id){if(MODELS[id])return MODELS[id];if(!MEDIA[id])throw new Error('Thiếu tệp mô hình');return MODELS[id]=await parseModel(MEDIA[id])}
 
 /* ---------- bộ dựng WebGL ---------- */
-const VS='attribute vec3 aP;attribute vec3 aN;attribute vec2 aT;uniform mat4 uMVP;uniform mat3 uNM;varying vec3 vN;varying vec2 vT;void main(){vN=uNM*aN;vT=aT;gl_Position=uMVP*vec4(aP,1.);}';
-const FS='precision mediump float;varying vec3 vN;varying vec2 vT;uniform vec4 uC;uniform sampler2D uTex;uniform float uUT;uniform float uLit;void main(){vec3 n=normalize(vN);if(!gl_FrontFacing)n=-n;float d=max(dot(n,normalize(vec3(.4,.65,.65))),0.);float d2=max(dot(n,normalize(vec3(-.6,-.2,.3))),0.)*.25;vec4 c=uC;if(uUT>.5)c*=texture2D(uTex,vT);float l=(.32+.78*d+d2)*uLit;gl_FragColor=vec4(c.rgb*l,c.a);}';
+const VS='attribute vec3 aP;attribute vec3 aN;attribute vec2 aT;uniform mat4 uMVP;uniform mat4 uMV;uniform mat3 uNM;varying vec3 vN;varying vec3 vV;varying vec2 vT;void main(){vN=uNM*aN;vT=aT;vV=(uMV*vec4(aP,1.)).xyz;gl_Position=uMVP*vec4(aP,1.);}';
+const FS=[
+'#ifdef GL_FRAGMENT_PRECISION_HIGH','precision highp float;','#else','precision mediump float;','#endif',
+'varying vec3 vN;varying vec3 vV;varying vec2 vT;',
+'uniform vec4 uC;uniform sampler2D uTex;uniform float uUT;uniform float uLit;uniform float uGloss;uniform float uDeep;uniform float uDist;uniform vec2 uMat;',
+'vec3 envMap(vec3 r){',
+'  float y=r.y;',
+'  vec3 sky=vec3(.55,.68,1.0),hor=vec3(.95,.92,.9),gnd=vec3(.10,.09,.16);',
+'  vec3 e=y>0.?mix(hor,sky,smoothstep(0.,.75,y)):mix(hor*.55,gnd,smoothstep(0.,.55,-y));',
+'  e+=vec3(1.,.97,.92)*pow(max(dot(r,normalize(vec3(.45,.75,.5))),0.),38.)*1.6;',   // softbox chính
+'  e+=vec3(.5,.7,1.)*pow(max(dot(r,normalize(vec3(-.8,.2,.4))),0.),22.)*.7;',      // softbox phụ
+'  e+=vec3(1.)*pow(max(1.-abs(y-.12)*2.6,0.),5.)*.22;',                              // dải chân trời
+'  return e;}',
+'void main(){',
+'  vec3 n=normalize(vN);if(!gl_FrontFacing)n=-n;',
+'  vec3 v=normalize(-vV);',
+'  vec4 c=uC;if(uUT>.5)c*=texture2D(uTex,vT);',
+'  vec3 alb=c.rgb;float metal=clamp(uMat.x,0.,.95);',
+'  float rough=clamp(uMat.y*(1.55-1.15*uGloss),.07,1.);',
+'  float nv=max(dot(n,v),0.);',
+'  vec3 l1=normalize(vec3(.45,.75,.5)),l2=normalize(vec3(-.75,-.1,.35)),l3=normalize(vec3(.1,.35,-.9));',
+'  float d1=clamp((dot(n,l1)+.2)/1.2,0.,1.);d1*=d1*(3.-2.*d1)*.35+.65*d1;',
+'  float d2=clamp((dot(n,l2)+.3)/1.3,0.,1.);',
+'  float d3=max(dot(n,l3),0.);',
+'  vec3 amb=mix(vec3(.13,.11,.18),vec3(.62,.70,.95),n.y*.5+.5)*.42;',
+'  vec3 diff=alb*(1.-metal*.9);',
+'  vec3 col=diff*(amb+vec3(1.,.96,.9)*d1*.95+vec3(.45,.58,1.)*d2*.32+vec3(.5,.7,1.)*d3*.18);',
+'  float shin=mix(10.,420.,pow(1.-rough,2.2));',
+'  vec3 h1=normalize(l1+v),h2=normalize(l2+v);',
+'  float sp=pow(max(dot(n,h1),0.),shin)*(shin+8.)/26.+pow(max(dot(n,h2),0.),shin*.6)*(shin*.6+8.)/70.;',
+'  sp*=step(0.,dot(n,l1))*.8+.2;',
+'  vec3 F0=mix(vec3(.04),alb,metal);',
+'  vec3 fres=F0+(1.-F0)*pow(1.-nv,5.);',
+'  vec3 r=reflect(-v,n);',
+'  vec3 tint=mix(vec3(1.),alb,metal);',
+'  float k=(1.-rough*.72)*(.35+.65*uGloss);',
+'  col+=fres*tint*sp*(.35+.65*uGloss);',
+'  col+=envMap(r)*tint*fres*(.45+metal*1.4)*k;',
+'  col+=vec3(.35,.75,1.)*pow(1.-nv,3.)*.22*uDeep*(.4+uGloss*.6);',             // ánh viền (rim)
+'  col*=mix(1.,.5+.5*pow(nv,.55),uDeep*.7);',                                    // tối dần ở rìa → thấy khối
+'  col*=1.-clamp((-vV.z-(uDist-1.1))/2.2,0.,1.)*.42*uDeep;',                     // xa camera thì tối hơn
+'  col*=uLit;',
+'  col=1.-exp(-col*1.35);',
+'  col=pow(col,vec3(.93));',
+'  gl_FragColor=vec4(col,c.a);}'
+].join('\n');
 const pot=n=>{let p=1;while(p<n&&p<2048)p*=2;return p};
 class M3DView{
   constructor(canvas,model,cfg,onChange){
-    this.c=canvas;this.m=model;this.cfg=Object.assign({az:30,el:15,dist:3.4,spin:0,lit:1,interactive:false},cfg);this.onChange=onChange;this.theta=0;this.dead=false;this.t0=performance.now();
+    this.c=canvas;this.m=model;this.cfg=Object.assign({az:30,el:15,dist:3.4,spin:0,lit:1,gloss:.6,deep:.6,interactive:false},cfg);this.onChange=onChange;this.theta=0;this.dead=false;this.t0=performance.now();
     const gl=this.gl=canvas.getContext('webgl',{alpha:true,premultipliedAlpha:false,antialias:true,preserveDrawingBuffer:true});
     if(!gl)throw new Error('Trình duyệt không hỗ trợ WebGL');
     this.u32=gl.getExtension('OES_element_index_uint');
     const mk=(t,s)=>{const sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(sh));return sh};
     const pr=this.pr=gl.createProgram();gl.attachShader(pr,mk(gl.VERTEX_SHADER,VS));gl.attachShader(pr,mk(gl.FRAGMENT_SHADER,FS));gl.linkProgram(pr);gl.useProgram(pr);
     this.loc={P:gl.getAttribLocation(pr,'aP'),N:gl.getAttribLocation(pr,'aN'),T:gl.getAttribLocation(pr,'aT')};
-    ['uMVP','uNM','uC','uTex','uUT','uLit'].forEach(n=>this.loc[n]=gl.getUniformLocation(pr,n));
+    ['uMVP','uMV','uNM','uC','uTex','uUT','uLit','uGloss','uDeep','uDist','uMat'].forEach(n=>this.loc[n]=gl.getUniformLocation(pr,n));
     const buf=(t,d)=>{const b=gl.createBuffer();gl.bindBuffer(t,b);gl.bufferData(t,d,gl.STATIC_DRAW);return b};
     this.parts=[...model.meshes].sort((a,b)=>(a.color[3]<1)-(b.color[3]<1)).map(m=>{
       let idx=m.idx,type=gl.UNSIGNED_INT;if(!this.u32||m.pos.length/3<65536){if(m.pos.length/3>=65536)return null;idx=new Uint16Array(idx);type=gl.UNSIGNED_SHORT}
       let tex=null;if(m.tex){tex=gl.createTexture();const s=pot(m.tex.width),h=pot(m.tex.height),cv=document.createElement('canvas');cv.width=s;cv.height=h;cv.getContext('2d').drawImage(m.tex,0,0,s,h);gl.bindTexture(gl.TEXTURE_2D,tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cv);gl.generateMipmap(gl.TEXTURE_2D);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT)}
-      return{p:buf(gl.ARRAY_BUFFER,m.pos),n:buf(gl.ARRAY_BUFFER,m.nor),t:m.uv?buf(gl.ARRAY_BUFFER,m.uv):null,i:buf(gl.ELEMENT_ARRAY_BUFFER,idx),cnt:idx.length,type,color:m.color,tex};
+      return{p:buf(gl.ARRAY_BUFFER,m.pos),n:buf(gl.ARRAY_BUFFER,m.nor),t:m.uv?buf(gl.ARRAY_BUFFER,m.uv):null,i:buf(gl.ELEMENT_ARRAY_BUFFER,idx),cnt:idx.length,type,color:m.color,tex,metal:m.metal!=null?m.metal:.12,rough:m.rough!=null?m.rough:.45};
     }).filter(Boolean);
     gl.enable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
     if(this.cfg.interactive)this.bind();
@@ -1616,13 +1674,13 @@ class M3DView{
     const gl=this.gl,c=this.c,k=this.cfg;gl.viewport(0,0,c.width,c.height);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
     const az=k.az*Math.PI/180,el=k.el*Math.PI/180,d=k.dist,eye=[d*Math.cos(el)*Math.sin(az),d*Math.sin(el),d*Math.cos(el)*Math.cos(az)];
     const V=M4.look(eye,[0,0,0],[0,1,0]),Pj=M4.persp(35*Math.PI/180,c.width/c.height,.05,50),Mm=M4.rotY(this.theta),MV=M4.mul(V,Mm),MVP=M4.mul(Pj,MV);
-    gl.uniformMatrix4fv(this.loc.uMVP,false,MVP);gl.uniformMatrix3fv(this.loc.uNM,false,new Float32Array([MV[0],MV[1],MV[2],MV[4],MV[5],MV[6],MV[8],MV[9],MV[10]]));gl.uniform1f(this.loc.uLit,k.lit);gl.uniform1i(this.loc.uTex,0);
+    gl.uniformMatrix4fv(this.loc.uMVP,false,MVP);gl.uniformMatrix4fv(this.loc.uMV,false,MV);gl.uniform1f(this.loc.uGloss,k.gloss==null?.6:k.gloss);gl.uniform1f(this.loc.uDeep,k.deep==null?.6:k.deep);gl.uniform1f(this.loc.uDist,d);gl.uniformMatrix3fv(this.loc.uNM,false,new Float32Array([MV[0],MV[1],MV[2],MV[4],MV[5],MV[6],MV[8],MV[9],MV[10]]));gl.uniform1f(this.loc.uLit,k.lit);gl.uniform1i(this.loc.uTex,0);
     for(const p of this.parts){
       gl.bindBuffer(gl.ARRAY_BUFFER,p.p);gl.enableVertexAttribArray(this.loc.P);gl.vertexAttribPointer(this.loc.P,3,gl.FLOAT,false,0,0);
       gl.bindBuffer(gl.ARRAY_BUFFER,p.n);gl.enableVertexAttribArray(this.loc.N);gl.vertexAttribPointer(this.loc.N,3,gl.FLOAT,false,0,0);
       if(p.t&&p.tex){gl.bindBuffer(gl.ARRAY_BUFFER,p.t);gl.enableVertexAttribArray(this.loc.T);gl.vertexAttribPointer(this.loc.T,2,gl.FLOAT,false,0,0);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,p.tex);gl.uniform1f(this.loc.uUT,1)}
       else{gl.disableVertexAttribArray(this.loc.T);gl.vertexAttrib2f(this.loc.T,0,0);gl.uniform1f(this.loc.uUT,0)}
-      gl.uniform4fv(this.loc.uC,p.color);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,p.i);gl.drawElements(gl.TRIANGLES,p.cnt,p.type,0);
+      gl.uniform4fv(this.loc.uC,p.color);gl.uniform2f(this.loc.uMat,p.metal,p.rough);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,p.i);gl.drawElements(gl.TRIANGLES,p.cnt,p.type,0);
     }
   }
   destroy(){this.dead=true;cancelAnimationFrame(this.raf);if(this.h){const c=this.c;c.removeEventListener('pointerdown',this.h.down);c.removeEventListener('pointermove',this.h.move);c.removeEventListener('pointerup',this.h.up);c.removeEventListener('pointercancel',this.h.up);c.removeEventListener('wheel',this.h.wheel);c.removeEventListener('click',this.h.click)}
@@ -1632,7 +1690,7 @@ function snapshotModel(model,cfg,w,h){
   const cv=document.createElement('canvas');cv.width=w;cv.height=h;
   const v=new M3DView(cv,model,Object.assign({},cfg,{spin:0,interactive:false}));v.cancelAnimationFrame;cancelAnimationFrame(v.raf);v.theta=cfg.theta||0;v.render();const url=cv.toDataURL('image/png');v.destroy();return url;
 }
-function modelPoster(e,model){const k=Math.max(1,e.w/e.h),W=k>=1?1000:Math.round(1000*k),H=k>=1?Math.round(1000/k):1000;return snapshotModel(model,Object.assign({lit:e.lit||1},e.cam||{az:30,el:15,dist:3.4}),W,H)}
+function modelPoster(e,model){const k=Math.max(1,e.w/e.h),W=k>=1?1000:Math.round(1000*k),H=k>=1?Math.round(1000/k):1000;return snapshotModel(model,Object.assign({lit:e.lit||1,gloss:e.gloss==null?.6:e.gloss,deep:e.deep==null?.6:e.deep},e.cam||{az:30,el:15,dist:3.4}),W,H)}
 const _rg={};
 function regenPoster(e){clearTimeout(_rg[e.id]);_rg[e.id]=setTimeout(async()=>{try{if(e.chart){ASSETS[e.img]=renderChart(e);redrawEl(e);thumbsLater();snap();return}const m=await getModel(e.media);ASSETS[e.img]=modelPoster(e,m);redrawEl(e);thumbsLater();snap()}catch(x){}},120)}
 
@@ -1643,7 +1701,7 @@ function mountLive(root,sl){
     const e=getEl(sl,n.dataset.id);if(!e)return;
     if(e.type==='model3d'){
       const cv=n.querySelector('canvas');
-      getModel(e.media).then(m=>{if(!root.isConnected&&!root._pending)return;const v=new M3DView(cv,m,Object.assign({lit:e.lit||1,spin:e.spin||0,interactive:true},e.cam||{}));root._live.push(v);const im=n.querySelector('img');if(im)im.style.visibility='hidden'}).catch(()=>{});
+      getModel(e.media).then(m=>{if(!root.isConnected&&!root._pending)return;const v=new M3DView(cv,m,Object.assign({lit:e.lit||1,gloss:e.gloss==null?.6:e.gloss,deep:e.deep==null?.6:e.deep,spin:e.spin||0,interactive:true},e.cam||{}));root._live.push(v);const im=n.querySelector('img');if(im)im.style.visibility='hidden'}).catch(()=>{});
     }
   });
 }
@@ -1700,7 +1758,7 @@ function disposePanelView(){if(panelView){panelView.destroy();panelView=null}}
 function mountPanelView(e){
   const cv=$('#mvCanvas');if(!cv)return;
   getModel(e.media).then(m=>{if(!cv.isConnected)return;disposePanelView();
-    panelView=new M3DView(cv,m,Object.assign({lit:e.lit||1,spin:e.spin||0,interactive:true},e.cam||{}),cam=>{e.cam=cam;regenPoster(e)})}).catch(err=>{cv.replaceWith(Object.assign(document.createElement('div'),{className:'hint',textContent:'Không dựng được xem trước 3D: '+err.message}))});
+    panelView=new M3DView(cv,m,Object.assign({lit:e.lit||1,gloss:e.gloss==null?.6:e.gloss,deep:e.deep==null?.6:e.deep,spin:e.spin||0,interactive:true},e.cam||{}),cam=>{e.cam=cam;regenPoster(e)})}).catch(err=>{cv.replaceWith(Object.assign(document.createElement('div'),{className:'hint',textContent:'Không dựng được xem trước 3D: '+err.message}))});
 }
 async function recapturePoster(e){
   try{const m=await videoMeta(mediaUrl(e.media),e.posterT||.1);ASSETS[e.img]=m.poster;redrawEl(e);thumbsLater();snap();toast('Đã chụp lại ảnh bìa')}catch(x){toast('Không chụp được ảnh bìa: '+x.message)}
@@ -1992,7 +2050,7 @@ const FOCUS={
     this.base=Math.max(.2,Math.min(8,Math.min(innerWidth*.8/w,innerHeight*.72/h)));
     if(e.type==='model3d'){
       const cv=node.querySelector('canvas'),k=Math.min(2,devicePixelRatio||1);cv.width=Math.min(2400,Math.round(w*this.base*k));cv.height=Math.min(2400,Math.round(h*this.base*k));
-      getModel(e.media).then(m=>{if(!this.on||this.e!==e)return;this.view=new M3DView(cv,m,Object.assign({lit:e.lit||1,spin:e.spin||0,interactive:true},e.cam||{}));const im=node.querySelector('img');if(im)im.style.visibility='hidden'}).catch(()=>{});
+      getModel(e.media).then(m=>{if(!this.on||this.e!==e)return;this.view=new M3DView(cv,m,Object.assign({lit:e.lit||1,gloss:e.gloss==null?.6:e.gloss,deep:e.deep==null?.6:e.deep,spin:e.spin||0,interactive:true},e.cam||{}));const im=node.querySelector('img');if(im)im.style.visibility='hidden'}).catch(()=>{});
     }
     if(e.type==='video'){const v=node.querySelector('video');if(v){v.currentTime=0;const pr=v.play();if(pr&&pr.catch)pr.catch(()=>{v.muted=true;v.play().catch(()=>{})})}}
     this.apply();
@@ -4797,6 +4855,171 @@ if(IS_PHONE){
   if(LS.get('nova-room','')&&LS.get('nova-autopair',false))RM.start();
 }
 })();
+})();
+
+</script>
+<script>
+/* ===== NOVA+ : Kim tự tháp Pepper's Ghost · Tan rã nano · Máy chiếu thứ 2 · Trình chiếu thông minh ===== */
+(()=>{
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+document.head.insertAdjacentHTML('beforeend',`<style>
+#pyrV{position:fixed;inset:0;background:#000;z-index:2147483600}.pyrH{position:absolute;inset:0}
+.pyrHud{position:absolute;left:0;right:0;top:38%;text-align:center;color:#26F0FF;font:700 22px/1.5 sans-serif;pointer-events:none;text-shadow:0 0 12px #26F0FF}
+.pyrX{position:absolute;top:8px;left:8px;z-index:2;background:#1b1540;color:#fff;border:1px solid #26F0FF;border-radius:8px;padding:6px 12px;font:14px sans-serif}
+#pyrP{position:fixed;right:12px;top:12px;width:300px;max-height:92vh;overflow:auto;z-index:2147483500;background:rgba(10,7,33,.94);border:1px solid #26F0FF;border-radius:12px;color:#fff;font:13px/1.45 sans-serif;padding:10px;box-shadow:0 0 30px rgba(38,240,255,.25)}
+#pyrP h4{margin:2px 0 8px;font-size:14px;color:#26F0FF}#pyrP .g{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0}
+#pyrP button{background:#1b1540;color:#fff;border:1px solid #3a2f8f;border-radius:8px;padding:7px 4px;font:12.5px sans-serif;cursor:pointer}#pyrP button:hover{border-color:#26F0FF}#pyrP button.on{background:#0e5b66;border-color:#26F0FF}
+#pyrP input[type=text]{width:100%;box-sizing:border-box;background:#0b0826;color:#fff;border:1px solid #3a2f8f;border-radius:8px;padding:7px;font-size:15px;letter-spacing:4px;text-align:center}
+#pyrP label{display:block;margin:5px 0 0;opacity:.85}#pyrP input[type=range]{width:100%}#pyrP .st{opacity:.8;font-size:12px;margin:4px 0}
+#smartTag{position:fixed;left:12px;bottom:12px;z-index:2147483400;background:rgba(10,7,33,.85);color:#26F0FF;border:1px solid #26F0FF;border-radius:999px;padding:5px 12px;font:12px sans-serif;display:none}
+</style>`);
+
+/* ---------- shader hạt nano ---------- */
+const VSP=`attribute vec3 aP,aR,aC;attribute float aS;uniform mat4 uM;uniform float uU,uT,uPx,uMode;varying vec3 vC;varying float vA;
+void main(){vec3 p=aP,dir=aR;float k=smoothstep(0.,1.,clamp(uU*1.35-aS*.35,0.,1.));vec3 off=dir*k*1.5;
+if(uMode>.5&&uMode<1.5){float a=k*7.*(.4+aS)+uT*.9*k;float c=cos(a),s=sin(a);off=vec3(p.x*c-p.z*s-p.x,dir.y*k*1.3,p.x*s+p.z*c-p.z)+dir*k*.35;}
+else if(uMode>1.5&&uMode<2.5){off=normalize(p+.001)*k*2.6+dir*k*.4;}
+else if(uMode>2.5){off=vec3(dir.x*k*.5,-k*2.2*(.4+aS),dir.z*k*.5);}
+off+=vec3(sin(uT*2.+aS*40.),cos(uT*1.7+aS*31.),sin(uT*1.3+aS*23.))*.05*k;p+=off;
+gl_Position=uM*vec4(p,1.);gl_PointSize=uPx*mix(1.,1.7,k)*3.2/gl_Position.w;vC=mix(aC,vec3(.25,.9,1.),k*.8+.1);vA=1.-k*.3;}`;
+const FSP=`precision mediump float;varying vec3 vC;varying float vA;void main(){float d=length(gl_PointCoord-.5);if(d>.5)discard;gl_FragColor=vec4(vC*(1.3-d),vA*(1.-d*1.7));}`;
+
+/* ---------- màn hình Kim tự tháp (4 hướng, nền đen) ---------- */
+class PyrScreen{
+  constructor(host){this.host=host;const c=this.cv=document.createElement('canvas');c.style.cssText='width:100%;height:100%;display:block;background:#000';host.appendChild(c);
+    this.S={az:0,el:8,dist:3.4,spin:18,size:.95,gap:.1,flip:0,guide:0};this.u=0;this.tu=0;this.mode=0;this.th=0;this.t0=performance.now();this.gv=null;this.run=true;
+    this.fit=()=>{const k=Math.min(2,devicePixelRatio||1);c.width=host.clientWidth*k;c.height=host.clientHeight*k};addEventListener('resize',this.fit);this.fit();
+    this.loop=this.loop.bind(this);requestAnimationFrame(this.loop)}
+  setModel(model){
+    if(this.gv)this.gv.destroy();const q=document.createElement('canvas');q.width=q.height=640;
+    const g=this.gv=new M3DView(q,model,{az:0,el:8,dist:3.4,lit:1.1,gloss:.7,deep:.5});cancelAnimationFrame(g.raf);
+    const gl=g.gl,N=16000,rest=new Float32Array(N*3),rnd=new Float32Array(N*3),col=new Float32Array(N*3),sd=new Float32Array(N),T=[];let tot=0;
+    for(const m of model.meshes){const p=m.pos,ix=m.idx,st=Math.max(1,Math.floor(ix.length/3/300000))*3;for(let i=0;i+2<ix.length;i+=st){const a=ix[i]*3,b=ix[i+1]*3,c=ix[i+2]*3,ux=p[b]-p[a],uy=p[b+1]-p[a+1],uz=p[b+2]-p[a+2],vx=p[c]-p[a],vy=p[c+1]-p[a+1],vz=p[c+2]-p[a+2];tot+=Math.hypot(uy*vz-uz*vy,uz*vx-ux*vz,ux*vy-uy*vx);T.push([m,a,b,c,tot])}}
+    for(let n=0;n<N&&T.length;n++){const r=Math.random()*tot;let lo=0,hi=T.length-1;while(lo<hi){const mid=(lo+hi)>>1;if(T[mid][4]<r)lo=mid+1;else hi=mid}const[m,a,b,c]=T[lo],p=m.pos;let u=Math.random(),v=Math.random();if(u+v>1){u=1-u;v=1-v}
+      for(let j=0;j<3;j++)rest[n*3+j]=p[a+j]+(p[b+j]-p[a+j])*u+(p[c+j]-p[a+j])*v;
+      const th=Math.random()*6.283,z=Math.random()*2-1,rr=Math.sqrt(1-z*z);rnd[n*3]=rr*Math.cos(th);rnd[n*3+1]=z;rnd[n*3+2]=rr*Math.sin(th);
+      const cc=m.color||[.8,.9,1];col[n*3]=cc[0];col[n*3+1]=cc[1];col[n*3+2]=cc[2];sd[n]=Math.random()}
+    const mk=(s,t)=>{const h=gl.createShader(t);gl.shaderSource(h,s);gl.compileShader(h);return h};
+    const pr=this.pp=gl.createProgram();gl.attachShader(pr,mk(VSP,gl.VERTEX_SHADER));gl.attachShader(pr,mk(FSP,gl.FRAGMENT_SHADER));gl.linkProgram(pr);
+    const bf=d=>{const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,d,gl.STATIC_DRAW);return b};
+    this.pb=[['aP',3,bf(rest)],['aR',3,bf(rnd)],['aC',3,bf(col)],['aS',1,bf(sd)]].map(([n,s,b])=>({l:gl.getAttribLocation(pr,n),s,b}));
+    this.pu={};['uM','uU','uT','uPx','uMode'].forEach(n=>this.pu[n]=gl.getUniformLocation(pr,n));this.N=N}
+  fx(n){const F={dissolve:[0,1],swirl:[1,1],burst:[2,1],rain:[3,1],assemble:[this.mode,0]};
+    if(n==='pulse'){this.mode=1;this.tu=.6;setTimeout(()=>{this.tu=0},1100);return}if(F[n]){this.mode=F[n][0];this.tu=F[n][1]}}
+  loop(now){if(!this.run)return;const dt=Math.min(.05,(now-this.t0)/1000);this.t0=now;try{this.draw(now/1000,dt)}catch(e){}requestAnimationFrame(this.loop)}
+  drawPts(g,t){
+    const gl=g.gl,k=g.cfg,az=k.az*Math.PI/180,el=k.el*Math.PI/180,d=k.dist,eye=[d*Math.cos(el)*Math.sin(az),d*Math.sin(el),d*Math.cos(el)*Math.cos(az)];
+    const M=M4.mul(M4.persp(35*Math.PI/180,1,.05,50),M4.mul(M4.look(eye,[0,0,0],[0,1,0]),M4.rotY(g.theta)));
+    gl.useProgram(this.pp);gl.uniformMatrix4fv(this.pu.uM,false,M);gl.uniform1f(this.pu.uU,this.u);gl.uniform1f(this.pu.uT,t);gl.uniform1f(this.pu.uPx,g.c.width/90);gl.uniform1f(this.pu.uMode,this.mode);
+    this.pb.forEach(a=>{gl.bindBuffer(gl.ARRAY_BUFFER,a.b);gl.enableVertexAttribArray(a.l);gl.vertexAttribPointer(a.l,a.s,gl.FLOAT,false,0,0)});
+    gl.disable(gl.DEPTH_TEST);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);gl.drawArrays(gl.POINTS,0,this.N);
+    this.pb.forEach(a=>gl.disableVertexAttribArray(a.l));gl.enable(gl.DEPTH_TEST);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.useProgram(g.pr)}
+  draw(t,dt){
+    const S=this.S,g=this.gv,c=this.cv,x=c.getContext('2d');x.fillStyle='#000';x.fillRect(0,0,c.width,c.height);if(!g)return;
+    if(this.u<this.tu)this.u=Math.min(this.tu,this.u+dt/1.5);else if(this.u>this.tu)this.u=Math.max(this.tu,this.u-dt/1.2);
+    this.th+=S.spin*dt*Math.PI/180;const W=c.width,H=c.height,U=Math.min(W,H),gap=U*S.gap,s=(U-gap)/2*S.size,o=gap/2+s/2,f=S.flip;
+    const P4=[[0,-1,0,0],[1,0,90,f?90:270],[0,1,180,180],[-1,0,-90,f?270:90]];
+    for(const[dx,dy,rot,az]of P4){
+      g.cfg.az=S.az+az;g.cfg.el=S.el;g.cfg.dist=S.dist;g.theta=this.th;const parts=g.parts;g.parts=this.u>.03?[]:parts;g.render();g.parts=parts;if(this.u>.03)this.drawPts(g,t);
+      x.save();x.translate(W/2+dx*o,H/2+dy*o);x.rotate(rot*Math.PI/180);if(f)x.scale(-1,1);x.drawImage(g.c,-s/2,-s/2,s,s);x.restore()}
+    if(S.guide){x.strokeStyle='#26F0FF';x.lineWidth=2;x.strokeRect(W/2-gap/2,H/2-gap/2,gap,gap)}}
+  destroy(){this.run=false;removeEventListener('resize',this.fit);if(this.gv)this.gv.destroy();this.cv.remove()}
+}
+
+/* ---------- kết nối máy 2 (PeerJS qua mã 4 số) ---------- */
+const NET={peer:null,conn:null,
+  lib(){return window.Peer?Promise.resolve():new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';s.onload=ok;s.onerror=()=>no(new Error('Không tải được PeerJS (cần Internet)'));document.head.appendChild(s)})},
+  async host(code,onData,onOpen,onErr){await this.lib();const p=this.peer=new Peer('nova-pyr-'+code);p.on('connection',c=>{this.conn=c;c.on('data',onData);c.on('open',onOpen)});p.on('error',onErr)},
+  async join(code,onOpen,onErr){await this.lib();const p=this.peer=new Peer();p.on('error',onErr);p.on('open',()=>{const c=this.conn=p.connect('nova-pyr-'+code,{reliable:true});c.on('open',onOpen);c.on('error',onErr)})},
+  send(o){if(this.conn&&this.conn.open)try{this.conn.send(o)}catch(_){}},open(){return !!(this.conn&&this.conn.open)}
+};
+
+/* ---------- lớp phủ hiển thị ---------- */
+function overlay(){const v=document.createElement('div');v.id='pyrV';v.innerHTML='<button class="pyrX">✕ Đóng</button><div class="pyrH"></div><div class="pyrHud"></div>';document.body.appendChild(v);
+  v.querySelector('.pyrX').onclick=()=>closeV();return v}
+let V=null,scr=null;
+function closeV(){if(scr){scr.destroy();scr=null}if(V){V.remove();V=null}try{if(document.fullscreenElement)document.exitFullscreen()}catch(_){}}
+addEventListener('keydown',e=>{if(e.key==='Escape'&&V){e.stopPropagation();e.preventDefault();closeV()}},true);
+const hud=t=>{const h=V&&V.querySelector('.pyrHud');if(h)h.innerHTML=t||''};
+
+/* ---------- MÁY 2: nhận & chiếu ---------- */
+async function receiver(){
+  closeV();V=overlay();scr=new PyrScreen(V.querySelector('.pyrH'));const code=String(Math.floor(1000+Math.random()*9000));
+  hud(`🔺 MÁY CHIẾU KIM TỰ THÁP<br>Nhập mã trên máy 1:<br><span style="font-size:56px;letter-spacing:10px">${code}</span><br><small>Đang chờ kết nối…</small>`);
+  try{V.requestFullscreen&&V.requestFullscreen();navigator.wakeLock&&navigator.wakeLock.request('screen').catch(()=>{})}catch(_){}
+  try{await NET.host(code,async d=>{
+      if(d.t==='st')Object.assign(scr.S,d.s);else if(d.t==='fx')scr.fx(d.n);
+      else if(d.t==='model'){hud('Đang nhận mô hình…');try{scr.setModel(await parseModel({name:d.name,blob:new Blob([d.buf])}));hud('')}catch(e){hud('Lỗi mô hình: '+e.message)}}},
+      ()=>hud('✅ Đã kết nối<br><small>Đặt kim tự tháp lên giữa màn hình</small>')||setTimeout(()=>hud(''),3500),
+      e=>hud('Lỗi kết nối: '+(e.type||e.message)))}catch(e){hud(e.message)}
+}
+
+/* ---------- MÁY 1: điều khiển ---------- */
+const PYR={ctl:false,sT:0,pp:'none',eff:['swirl','burst','rain','dissolve'],ei:0,smart:false,auto:false,tm:0,
+  S:{az:0,el:8,dist:3.4,spin:18,size:.95,gap:.1,flip:0,guide:0},
+  mdl(){return (typeof FOCUS!=='undefined'&&FOCUS.on&&FOCUS.e&&FOCUS.e.type==='model3d')?FOCUS.e:(P.sl&&P.sl.els.find(x=>x.type==='model3d'))},
+  async sendModel(){const e=this.mdl();if(!e||!NET.open())return false;const m=MEDIA[e.media];NET.send({t:'model',name:m.name,buf:await m.blob.arrayBuffer()});this.sync(1);return true},
+  async local(){const e=this.mdl();if(!e){toast('Slide này chưa có mô hình 3D — thêm bằng nút 3D rồi thử lại',4000);return}
+    closeV();V=overlay();scr=new PyrScreen(V.querySelector('.pyrH'));Object.assign(scr.S,this.S);try{scr.setModel(await getModel(e.media))}catch(x){hud(x.message)}},
+  sync(force){const now=performance.now();if(!force&&now-this.sT<40)return;this.sT=now;if(scr)Object.assign(scr.S,this.S);NET.send({t:'st',s:this.S})},
+  fx(n){if(scr)scr.fx(n);NET.send({t:'fx',n});flashMsg('✦ '+({dissolve:'Tan rã',swirl:'Xoáy hạt',burst:'Nổ tung',rain:'Mưa hạt',assemble:'Tái tạo',pulse:'Nhịp'}[n]||n))},
+  panel(){
+    if(!P.on)return;let p=$('#pyrP');if(p){p.remove();this.ctl=false;return}
+    p=document.createElement('div');p.id='pyrP';this.ctl=true;
+    p.innerHTML=`<h4>🔺 Kim tự tháp · Pepper's Ghost <button data-a="x" style="float:right;padding:1px 8px">✕</button></h4>
+<div class="g"><button data-a="local">📺 Chiếu tại máy này</button><button data-a="hand">🖐 Điều khiển tay</button></div>
+<div class="st">📱 Máy 2: mở Nova → nút “📱 Máy chiếu” → nhập mã</div><input type="text" id="pyrCode" maxlength="4" placeholder="Mã 4 số"><div class="g"><button data-a="join">🔗 Kết nối máy 2</button><button data-a="model">📤 Gửi mô hình</button></div>
+<div class="st" id="pyrSt">Chưa kết nối</div>
+<h4>Hiệu ứng hạt nano</h4><div class="g"><button data-f="dissolve">💥 Tan rã</button><button data-f="assemble">🧬 Tái tạo</button><button data-f="swirl">🌀 Xoáy</button><button data-f="burst">✨ Nổ</button><button data-f="rain">🌧 Mưa hạt</button><button data-f="pulse">💓 Nhịp</button></div>
+<label>Kích thước <input type="range" data-k="size" min=".5" max="1" step=".01" value="${this.S.size}"></label>
+<label>Khoảng trống giữa <input type="range" data-k="gap" min=".02" max=".4" step=".01" value="${this.S.gap}"></label>
+<label>Tự quay <input type="range" data-k="spin" min="0" max="90" step="1" value="${this.S.spin}"></label>
+<div class="g"><button data-t="flip">↔ Lật gương</button><button data-t="guide">▣ Khung căn</button><button data-a="smart">🧠 Thông minh</button><button data-a="auto">⏭ Tự chuyển</button></div>
+<div class="st">Tay: chụm+kéo = xoay · hai tay chụm = zoom · nắm tay = tan rã · xòe tay = tái tạo · vuốt = đổi hiệu ứng</div>`;
+    document.body.appendChild(p);
+    p.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;
+      if(d.f)return this.fx(d.f);
+      if(d.t){this.S[d.t]=this.S[d.t]?0:1;b.classList.toggle('on',!!this.S[d.t]);return this.sync(1)}
+      if(d.a==='x'){p.remove();this.ctl=false}
+      else if(d.a==='local')this.local();
+      else if(d.a==='hand'){if(HandCtl.on){HandCtl.stop()}else HandCtl.start();b.classList.toggle('on')}
+      else if(d.a==='join'){const c=$('#pyrCode').value.trim();if(!/^\d{4}$/.test(c))return toast('Nhập đúng mã 4 số trên máy 2');$('#pyrSt').textContent='Đang kết nối…';
+        NET.join(c,async()=>{$('#pyrSt').textContent='✅ Đã nối máy 2';await this.sendModel()},e=>{$('#pyrSt').textContent='Lỗi: '+(e.type||e.message)})}
+      else if(d.a==='model'){this.sendModel().then(ok=>toast(ok?'Đã gửi mô hình sang máy 2':'Chưa kết nối hoặc slide không có mô hình 3D'))}
+      else if(d.a==='smart'){this.smart=!this.smart;b.classList.toggle('on',this.smart);this.smartSet()}
+      else if(d.a==='auto'){this.auto=!this.auto;b.classList.toggle('on',this.auto);this.pace()}});
+    p.addEventListener('input',e=>{const k=e.target.dataset.k;if(k){this.S[k]=+e.target.value;this.sync(1)}});
+  },
+  /* cử chỉ tay → mô hình 3D (chặn xử lý mặc định khi bảng đang mở) */
+  hand(e){
+    const S=this.S;switch(e.type){
+      case 'drag':S.az-=e.dx*260;S.el=clamp(S.el+e.dy*160,-60,70);this.sync();break;
+      case 'twoMove':S.dist=clamp(S.dist/(e.dr||1),1.6,9);S.az+=(e.da||0)*.8;this.sync();break;
+      case 'fist':this.fx('dissolve');break;
+      case 'swipe':this.ei=(this.ei+1)%this.eff.length;this.fx(this.eff[this.ei]);break;
+      case 'tap':this.fx('pulse');break;
+      case 'cursor':if(e.pose==='palm'&&this.pp==='fist')this.fx('assemble');this.pp=e.pose;break}
+    return true},
+  /* trình chiếu thông minh: tự bật tay+giọng nói, gợi ý 3D, ước lượng thời gian theo ghi chú */
+  smartSet(){
+    let t=$('#smartTag');if(!t){document.body.insertAdjacentHTML('beforeend','<div id="smartTag"></div>');t=$('#smartTag')}
+    t.style.display=this.smart?'block':'none';
+    if(this.smart){if(!HandCtl.on)HandCtl.start();try{if(typeof VC!=='undefined'&&!VC.on)VC.start()}catch(_){}this.onSlide()}else clearTimeout(this.tm)},
+  secs(){const w=((P.sl&&P.sl.notes)||'').trim().split(/\s+/).filter(Boolean).length;return clamp(Math.round(w/2.6)||12,8,180)},
+  pace(){clearTimeout(this.tm);if(this.auto&&P.on&&!V)this.tm=setTimeout(()=>{if(this.auto&&!V)pNext()},this.secs()*1000)},
+  onSlide(){if(!this.smart&&!this.auto)return;const t=$('#smartTag');if(t&&this.smart)t.textContent=`🧠 Thông minh · gợi ý ${this.secs()}s${P.sl&&P.sl.els.some(x=>x.type==='model3d')?' · có 3D: nhấn G':''}`;
+    if(this.smart&&this.mdl())flashMsg('🔺 Slide có mô hình 3D — nhấn G để chiếu Kim tự tháp');this.pace()}
+};
+const _hh=HandCtl.handle;HandCtl.handle=function(e){if(PYR.ctl&&PYR.hand(e))return;return _hh.apply(this,arguments)};
+const _hk=holoKey;holoKey=function(e){if(e.key==='g'||e.key==='G'){e.preventDefault();PYR.panel();return true}return _hk(e)};
+const _ps=pShow;pShow=function(){const r=_ps.apply(this,arguments);setTimeout(()=>{PYR.onSlide();if(NET.open())PYR.sendModel()},400);return r};
+const _pc=presClose;presClose=function(){const p=$('#pyrP');if(p)p.remove();PYR.ctl=false;PYR.smart=false;PYR.auto=false;clearTimeout(PYR.tm);const t=$('#smartTag');if(t)t.style.display='none';closeV();return _pc.apply(this,arguments)};
+
+const b=document.createElement('button');b.className='b';b.id='bPyr';b.textContent='🔺 Kim tự tháp';b.title="Chiếu mô hình 3D lên kim tự tháp Pepper's Ghost, điều khiển bằng tay, kết nối máy thứ 2";
+const b2=document.createElement('button');b2.className='b';b2.id='bPyr2';b2.textContent='📱 Máy chiếu';b2.title='Dùng thiết bị này làm màn hình chiếu kim tự tháp (máy thứ 2)';
+$('#bHolo').after(b,b2);
+b.onclick=()=>{if(!P.on){presOpen(cur);setTimeout(()=>PYR.panel(),400)}else PYR.panel()};b2.onclick=receiver;
+window.PYR=PYR;
 })();
 
 </script>
