@@ -3225,6 +3225,30 @@ function slideToCanvas(sl,sc){
     im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
   });
 }
+/* chụp slide ĐANG TRÌNH CHIẾU: hiệu ứng chạy bằng Web Animations nên phải đọc kiểu đã tính toán rồi ghi vào bản sao */
+const LIVE_PROPS=['opacity','transform','filter','clipPath','visibility','left','top','width','height','fontSize','color','fill','fillOpacity','stroke','strokeWidth','strokeDasharray','strokeDashoffset','backgroundColor','borderRadius','boxShadow','textShadow'];
+function liveToCanvas(root,sc){
+  return new Promise((ok,no)=>{
+    try{
+      const r=root.cloneNode(true),A=[root].concat([...root.querySelectorAll('*')]),B=[r].concat([...r.querySelectorAll('*')]);
+      for(let j=0;j<A.length&&j<B.length;j++){
+        const a=A[j],b=B[j];
+        if(!a.getAnimations||!b.style||!a.getAnimations().length)continue;
+        const cs=getComputedStyle(a);
+        LIVE_PROPS.forEach(p=>{const v=cs[p];if(v!=null&&v!=='')b.style[p]=v});
+      }
+      $$('.mbadge',r).forEach(x=>x.remove());
+      const host=document.createElement('div');host.style.cssText='position:relative;width:1280px;height:720px;overflow:hidden;background:#000';
+      const st=document.createElement('style');st.textContent=EXPCSS;host.appendChild(st);host.appendChild(r);
+      const xml=new XMLSerializer().serializeToString(host);
+      const svg='<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><foreignObject x="0" y="0" width="1280" height="720">'+xml+'</foreignObject></svg>';
+      const im=new Image();
+      im.onload=()=>{try{const cv=document.createElement('canvas');cv.width=Math.round(1280*sc);cv.height=Math.round(720*sc);const g=cv.getContext('2d');g.fillStyle='#000';g.fillRect(0,0,cv.width,cv.height);g.scale(sc,sc);g.drawImage(im,0,0);ok(cv)}catch(e){no(e)}};
+      im.onerror=()=>no(new Error('live'));
+      im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+    }catch(e){no(e)}
+  });
+}
 function makePdf(pages,W,H){
   const enc=new TextEncoder(),chunks=[],offs=[];let len=0;
   const push=x=>{const b=typeof x==='string'?enc.encode(x):x;chunks.push(b);len+=b.length};
@@ -4340,33 +4364,50 @@ const RM={
   /* ---------- hình slide gửi sang điện thoại (chỉ qua kênh trực tiếp) ---------- */
   imgSync(i){
     const ch=this.dcR;if(!ch||ch.readyState!=='open'||this.imgBusy)return;
-    const now=Date.now();if(i!==this._iSeen){this._iSeen=i;this._iT=now}
-    if(now-this._iT<400)return;            /* đợi đứng yên một chút, tránh dựng khi đang lật nhanh */
+    const now=Date.now(),sg=i+':'+(P.on?P.gi:-1);
+    if(sg!==this._iSeen){this._iSeen=sg;this._iT=now}
+    if(now-this._iT<250)return;            /* đợi đứng yên một chút, tránh dựng khi đang lật nhanh */
     const sent=this.sent||(this.sent={}),L=deck.slides;
     const hash=t=>{let h=5381;for(let j=0;j<t.length;j++)h=((h<<5)+h+t.charCodeAt(j))|0;return (h>>>0).toString(36)+t.length};
     for(const [slot,idx,sc,q] of [['cur',i,.6,.62],['next',i+1,.3,.55]]){
       const sl=L[idx];
       if(!sl){if(sent[slot]!=='none'){try{ch.send(JSON.stringify({t:'img',slot,i:idx,none:1}));sent[slot]='none'}catch(_){}}continue}
-      const k=slot+idx+'-'+hash(JSON.stringify(sl));
+      let live=null;
+      if(slot==='cur'&&P.on&&P.root&&P.sl===sl&&P.i===idx){if(P.busy)return;live=P.root}
+      const k=slot+idx+'-'+(live?'g'+P.gi+(P.gi?'-':'')+hash(String(live.querySelectorAll('*').length)):'')+hash(JSON.stringify(sl));
       if(sent[slot]===k)continue;
       this.imgBusy=true;
-      this.sendImg(slot,idx,k,sl,sc,q).catch(()=>{}).then(()=>{this.imgBusy=false});
+      this.sendImg(slot,idx,k,sl,sc,q,live,slot).catch(()=>{}).then(()=>{this.imgBusy=false});
       return;                               /* mỗi lượt một ảnh; lượt sau làm ảnh còn lại */
     }
+    /* thumbnail mọi slide cho danh sách trên điện thoại (ưu tiên thấp, mỗi lượt một ảnh) */
+    if(now-(this._thT||0)<700)return;this._thT=now;
+    for(let x=0;x<L.length;x++){
+      const key='th'+x,k=key+'-'+hash(JSON.stringify(L[x]));
+      if(sent[key]===k)continue;
+      this.imgBusy=true;
+      this.sendImg('th',x,k,L[x],.16,.5,null,key).catch(()=>{}).then(()=>{this.imgBusy=false});
+      return;
+    }
   },
-  async sendImg(slot,idx,k,sl,sc,q){
-    let url=null;
-    try{const cv=await slideToCanvas(sl,sc);url=cv.toDataURL('image/jpeg',q)}catch(_){}
+  async sendImg(slot,idx,k,sl,sc,q,live,sk){
+    sk=sk||slot;let url=null,g=-1;
+    try{
+      let cv=null;
+      if(live){const g0=P.gi;try{cv=await liveToCanvas(live,sc);g=g0}catch(_){cv=null}}
+      if(!cv)cv=await slideToCanvas(sl,sc);
+      url=cv.toDataURL('image/jpeg',q);
+    }catch(_){}
     const ch=this.dcR;if(!ch||ch.readyState!=='open')return;
-    if(!url){ch.send(JSON.stringify({t:'img',slot,i:idx,k,err:1}));this.sent[slot]=k;return}
+    if(!url){ch.send(JSON.stringify({t:'img',slot,i:idx,k,err:1}));this.sent[sk]=k;return}
     const b=url.slice(url.indexOf(',')+1),CH=12000,n=Math.ceil(b.length/CH);
-    ch.send(JSON.stringify({t:'img',slot,i:idx,k,n}));
+    ch.send(JSON.stringify({t:'img',slot,i:idx,k,n,g}));
     for(let x=0;x<n;x++){
       while(ch.bufferedAmount>262144){await sleep(25);if(ch.readyState!=='open')return}
       if(ch.readyState!=='open')return;
       ch.send(JSON.stringify({t:'imgc',k,s:x,d:b.slice(x*CH,(x+1)*CH)}));
     }
-    this.sent[slot]=k;
+    this.sent[sk]=k;
   },
   /* gửi tới điện thoại */
   out(m,unreliable){
@@ -4387,7 +4428,7 @@ const RM={
     try{
       if(m.t==='cmd'){
         if(!CMDS.includes(m.cmd)&&m.cmd!=='start')return;
-        if(!P.on){if(m.cmd==='next'||m.cmd==='start'||m.cmd==='slideNext'){presOpen(cur,{nofs:true})}return}
+        if(!P.on){if(m.cmd==='next'||m.cmd==='start'||m.cmd==='slideNext'){presOpen(cur,{nofs:true})}else if(m.cmd==='goto'){presOpen(Math.max(0,Math.min(deck.slides.length-1,(+m.n||1)-1)),{nofs:true})}return}
         if(m.cmd==='start')return;
         VC.run({cmd:m.cmd,n:m.n},'📱 '+m.cmd);
       }else if(m.t==='voice'){
@@ -4405,7 +4446,8 @@ const RM={
     const sl=P.on?P.sl:null,st={t:'state',on:!!P.on,i:P.on?P.i:cur,n:deck.slides.length,gi:P.on?Math.min(P.gi,P.groups.length):0,g:P.on?P.groups.length:0,
       notes:(sl?sl.notes:deck.slides[cur]&&deck.slides[cur].notes)||'',black:$('#pBlack').style.display==='block',pen:!!PEN.on,laser:!!laserOn,name:(deck.name||document.title||'Nova Slides').slice(0,60)};
     const j=JSON.stringify(st),now=Date.now(),relay=!(this.dcR&&this.dcR.readyState==='open');
-    if(j!==this.lastSt&&now-this.lastStT>(relay?1500:0)||now-this.lastStT>(relay?10000:4000)){this.lastSt=j;this.lastStT=now;this.out(st)}
+    if(P.on){if(!this._pt0)this._pt0=now}else this._pt0=0;
+    if(j!==this.lastSt&&now-this.lastStT>(relay?1500:0)||now-this.lastStT>(relay?10000:4000)){this.lastSt=j;this.lastStT=now;this.out(Object.assign({},st,{el:this._pt0?Math.floor((now-this._pt0)/1000):-1}))}
     this.imgSync(st.i);
     if(this.opened)this.render(true);
   },
@@ -4518,7 +4560,7 @@ const PH={
     let m=raw;if(typeof raw==='string'){try{m=JSON.parse(raw)}catch(_){return}}
     if(!m)return;
     if(m.t==='hello'){this.host={w:m.w,h:m.h};if(this.eng)this.eng.scr=this.eng.scrFix=[m.w,m.h]}
-    else if(m.t==='state'){this.st=m;this.ui()}
+    else if(m.t==='state'){this.st=m;this.stAt=Date.now();this.ui()}
     else if(m.t==='pong'){this.rtt=Date.now()-m.ts;this.send({t:'rtt',v:this.rtt});this.ui()}
     else if(m.t==='img'){this.onImg(m)}
     else if(m.t==='imgc'){this.onImgc(m)}
@@ -4532,24 +4574,37 @@ const PH={
   cmd(cmd,n){this.send({t:'cmd',cmd,n});try{navigator.vibrate&&navigator.vibrate(12)}catch(_){}},
   /* ---------- nhận hình slide từ máy tính ---------- */
   onImg(m){
-    const slot=m.slot==='next'?'next':'cur';
+    const slot=m.slot==='next'?'next':m.slot==='th'?'th':'cur';
     if(m.none){this.setShot(slot,null,m.i,'none');return}
     if(m.err){this.setShot(slot,null,m.i,'err');return}
     const A=this.asm||(this.asm={});
     for(const k in A)if(A[k].slot===slot)delete A[k];
-    A[m.k]={slot,i:m.i,n:m.n,parts:new Array(m.n),got:0};
+    A[m.k]={slot,i:m.i,n:m.n,g:m.g,parts:new Array(m.n),got:0};
   },
   onImgc(m){
     const a=this.asm&&this.asm[m.k];if(!a||a.parts[m.s]!=null)return;
     a.parts[m.s]=m.d;
-    if(++a.got===a.n){delete this.asm[m.k];this.setShot(a.slot,'data:image/jpeg;base64,'+a.parts.join(''),a.i)}
+    if(++a.got===a.n){delete this.asm[m.k];this.setShot(a.slot,'data:image/jpeg;base64,'+a.parts.join(''),a.i,undefined,a.g)}
   },
-  setShot(slot,src,i,why){
+  setShot(slot,src,i,why,g){
+    if(slot==='th'){(this.th||(this.th={}))[i]=src||undefined;this.renderList();return}
     const nx=slot==='next',im=$S2(nx?'#phImgN':'#phImg'),msg=$S2(nx?'#phNextMsg':'#phShotMsg');if(!im||!msg)return;
-    (this.imgI||(this.imgI={}))[slot]=src?i:undefined;
+    (this.imgI||(this.imgI={}))[slot]=src?i:undefined;if(slot==='cur')this.imgG=(g==null?-1:g);
     if(src){im.src=src;im.style.display='block';msg.style.display='none'}
     else{im.removeAttribute('src');im.style.display='none';msg.style.display='flex';msg.textContent=why==='none'?'— hết —':'Không dựng được hình slide'}
     this.ui();
+  },
+  renderList(){
+    const L=$S2('#phList');if(!L||L.style.display!=='flex')return;
+    const g=$S2('#phGrid'),n=this.st?this.st.n:0,cur=this.st?this.st.i:-1,T=this.th||{};
+    let h='';for(let i=0;i<n;i++)h+='<div class="c'+(i===cur?' on':'')+'" data-g="'+(i+1)+'">'+(T[i]?'<img src="'+T[i]+'" alt="">':'<div class="ph">…</div>')+'<b>'+(i+1)+'</b></div>';
+    g.innerHTML=h;
+  },
+  tickTime(){
+    const e=$S2('#phTime');if(!e)return;const s=this.st;
+    if(!s||!s.on||s.el==null||s.el<0){e.textContent='';return}
+    const t=Math.floor(s.el+(Date.now()-(this.stAt||Date.now()))/1000),m=Math.floor(t/60),x=t%60;
+    e.textContent='⏱ '+(m<10?'0':'')+m+':'+(x<10?'0':'')+x+' đã trình chiếu';
   },
   /* ---------- UI ---------- */
   build(){
@@ -4587,13 +4642,23 @@ html.phone body>*:not(#phoneUI):not(style):not(script){display:none!important}
 #phShot img,#phShotN img{display:none;width:100%;height:100%;object-fit:contain;transition:opacity .15s}
 #phShot .msg,#phShotN .msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#7d84c9;font-size:12px;padding:8px}
 #phNextRow{display:flex;align-items:center;gap:10px;margin-top:8px}#phShotN{width:42%;flex:none}
-#phShot.big{position:fixed;inset:0;z-index:50;border-radius:0;aspect-ratio:auto;width:100%;height:100%}`;
+#phShot.big{position:fixed;inset:0;z-index:50;border-radius:0;aspect-ratio:auto;width:100%;height:100%}
+#phListBtn{width:100%;margin-top:10px}
+#phList{display:none;position:fixed;inset:0;z-index:60;background:#05040F;flex-direction:column;padding:12px}
+#phList .hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-weight:700}
+#phGrid{flex:1;overflow:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:8px;align-content:start}
+#phGrid .c{position:relative;border:2px solid #2a2160;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:16/9}
+#phGrid .c.on{border-color:#FF3DA5}
+#phGrid .c img{width:100%;height:100%;object-fit:cover;display:block}
+#phGrid .c .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#5b5aa0}
+#phGrid .c b{position:absolute;left:6px;bottom:4px;background:rgba(5,4,15,.75);border-radius:8px;padding:0 7px;font-size:12px}`;
     document.head.appendChild(st);
     const u=document.createElement('div');u.id='phoneUI';
     u.innerHTML=`<div class="ph-top"><b>NOVA REMOTE</b><span class="ph-sub" id="phMode">đang kết nối…</span><span class="ph-dot wait" id="phDotS"></span></div>
-<div class="ph-card"><div class="ph-sub" id="phName">—</div><div class="ph-cnt" id="phCnt">– / –</div><div class="ph-sub" id="phStep"></div></div>
+<div class="ph-card"><div class="ph-sub" id="phName">—</div><div class="ph-cnt" id="phCnt">– / –</div><div class="ph-sub" id="phStep"></div><div class="ph-sub" id="phTime"></div></div>
 <div class="ph-card" id="phShotCard"><div id="phShot"><img id="phImg" alt="Slide hiện tại"><div class="msg" id="phShotMsg">Đang chờ hình slide…</div></div><div class="ph-sub" style="margin-top:4px;font-size:11px">Chạm vào hình để phóng to / thu nhỏ</div><div id="phNextRow"><span class="ph-sub">Slide tiếp theo</span><div id="phShotN"><img id="phImgN" alt="Slide tiếp theo"><div class="msg" id="phNextMsg">…</div></div></div></div>
 <div class="ph-nav"><button id="phPrev">◀ Lùi</button><button class="nx" id="phNext">Tiếp ▶</button></div>
+<button id="phListBtn">▦ Danh sách slide — chạm để nhảy tới</button>
 <div id="phPad"><span id="phPadT">Chạm &amp; kéo = con trỏ laser · chạm nhanh = nhấp · vuốt ngang = đổi slide</span><div id="phDot"></div></div>
 <div class="ph-row"><button data-c="start" id="phStart">▶ Bắt đầu</button><button data-c="black" id="phBlack">⬛ Tối màn</button><button data-c="pen" id="phPen">✎ Bút</button><button data-c="laser" id="phLaser">🔴 Laser</button><button data-c="clear">🧹 Xóa nét</button><button data-c="exit">⏹ Thoát</button><button data-c="first">⏮ Đầu</button><button data-c="last">⏭ Cuối</button><button data-c="zin">🔍 Phóng to</button></div>
 <div class="ph-card ph-sen">
@@ -4604,6 +4669,7 @@ html.phone body>*:not(#phoneUI):not(style):not(script){display:none!important}
 </div>
 <div class="ph-card"><div class="ph-sub">Ghi chú diễn giả</div><div id="phNotes">—</div></div>
 <div class="ph-sub" style="text-align:center;margin-top:12px">Giữ màn hình sáng khi trình chiếu. Hình ảnh camera không rời khỏi điện thoại.</div>
+<div id="phList"><div class="hd"><span>Chọn slide</span><button id="phListX" style="padding:6px 14px">✕ Đóng</button></div><div id="phGrid"></div></div>
 <div id="phFlash"></div>`;
     document.body.appendChild(u);
     this.bind();this.ui();
@@ -4613,10 +4679,11 @@ html.phone body>*:not(#phoneUI):not(style):not(script){display:none!important}
     const m=this.mode(),dot=$S2('#phDotS');if(!dot)return;dot.className='ph-dot '+m;
     $S2('#phMode').textContent={p2p:'trực tiếp'+(this.rtt!=null?' · '+this.rtt+' ms':''),relay:'qua máy chủ',wait:'đang tìm máy chiếu…'}[m];
     const ii=this.imgI||{},hi=$S2('#phImg'),hm=$S2('#phShotMsg');
-    if(hi)hi.style.opacity=(this.st&&ii.cur!=null&&ii.cur!==this.st.i)?.45:1;
+    if(hi)hi.style.opacity=(this.st&&ii.cur!=null&&(ii.cur!==this.st.i||(this.imgG>=0&&this.imgG!==this.st.gi)))?.45:1;
     if(hm&&ii.cur==null&&hm.style.display!=='none'&&hm.textContent.indexOf('Không dựng')<0)hm.textContent=m==='p2p'?'Đang chờ hình slide…':'Hình xem trước chỉ hiện khi kết nối trực tiếp (hiện đang đi qua máy chủ)';
     const s=this.st;
     if(s){
+      if(s.i!==this._li||s.n!==this._ln){this._li=s.i;this._ln=s.n;this.renderList()}
       $S2('#phName').textContent=s.name||'';$S2('#phCnt').textContent=(s.i+1)+' / '+s.n;
       $S2('#phStep').textContent=s.on?(s.g?'bước '+s.gi+'/'+s.g:'')+(s.black?' · ⬛ màn tối':''):'Chưa trình chiếu — bấm ▶ Bắt đầu hoặc “Tiếp”';
       $S2('#phNotes').textContent=s.notes||'(Không có ghi chú)';
@@ -4630,6 +4697,9 @@ html.phone body>*:not(#phoneUI):not(style):not(script){display:none!important}
     $S2('#phPrev').onclick=()=>this.cmd('prev');
     $S2('#phNext').onclick=()=>this.cmd('next');
     $S2('#phShot').addEventListener('click',()=>$S2('#phShot').classList.toggle('big'));
+    $S2('#phListBtn').onclick=()=>{$S2('#phList').style.display='flex';this.renderList()};
+    $S2('#phListX').onclick=()=>{$S2('#phList').style.display='none'};
+    $S2('#phGrid').addEventListener('click',e=>{const c=e.target.closest('[data-g]');if(!c)return;$S2('#phList').style.display='none';this.cmd('goto',+c.dataset.g);this.flash('➜ Slide '+c.dataset.g)});
     $S2('#phoneUI').addEventListener('click',e=>{const b=e.target.closest('button[data-c]');if(b)this.cmd(b.dataset.c)});
     /* touch pad */
     const pad=$S2('#phPad'),dot=$S2('#phDot');let down=null,last=null;
@@ -4701,6 +4771,7 @@ html.phone body>*:not(#phoneUI):not(style):not(script){display:none!important}
   start(){
     this.build();this.connect();
     const pg=()=>{this.send({t:'ping',ts:Date.now()});this.pingI=setTimeout(pg,this.mode()==='p2p'?2500:8000)};pg();
+    setInterval(()=>this.tickTime(),1000);
     /* giọng nói + vỗ tay chạy trên điện thoại, gửi lệnh về máy chiếu */
     VC.run=(h,txt)=>{this.send({t:'cmd',cmd:h.cmd,n:h.n});this.flash('🎤 '+(txt||h.cmd))};
     CL.act=n=>{this.send({t:'clap',n});this.flash(n===1?'👏 Tiếp':'👏👏 Lùi')};
@@ -4729,5 +4800,157 @@ if(IS_PHONE){
 })();
 
 </script>
+<!--NOVA_GATE_START-->
+<script>
+/* Nova gate — do Nova Admin tạo. Không chỉnh sửa. */
+(function(PUB,API,GRACE){
+  'use strict';
+  if(!PUB)return;
+  /* Trang mở bằng mã QR của Nova Remote (#r=…) chỉ là bộ điều khiển trên điện thoại, không có trình soạn thảo → không cần mã kích hoạt */
+  try{if(/(^|[#&?])r=[a-z0-9]{6,}/i.test(String(location.hash)+'&'+String(location.search).replace(/^\?/,'')))return}catch(_){}
+  GRACE=+GRACE>0?+GRACE:24;
+  const LK='nova-lic-v1',UK='nova-use-v1',CK='nova-chk-v1',DK='nova-did-v1',T0=Date.now();
+  /* mã thiết bị: ngẫu nhiên, lưu trong trình duyệt này; dùng để khóa mã vào đúng một thiết bị */
+  let did='';
+  try{
+    did=JSON.parse(localStorage.getItem(DK)||'null')||'';
+    if(!/^[A-Z0-9]{8}$/.test(did)){
+      const A='ABCDEFGHJKMNPQRSTUVWXYZ23456789',r=crypto.getRandomValues(new Uint8Array(8));
+      did=Array.from(r,x=>A[x%A.length]).join('');localStorage.setItem(DK,JSON.stringify(did));
+    }
+  }catch(_){did=did||'????????'}
+  const didFmt=did.slice(0,4)+'-'+did.slice(4);
+  const dec=s=>{s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const b=atob(s),a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a};
+  const ld=k=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch(_){return null}};
+  const sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(_){}};
+  const day=()=>{const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()};
+  let keyP=null;
+  const pub=()=>keyP||(keyP=crypto.subtle.importKey('jwk',PUB,{name:'ECDSA',namedCurve:'P-256'},false,['verify']));
+  async function verify(tok){
+    const p=String(tok||'').trim().split('.');if(p.length!==2)return null;
+    try{
+      const ok=await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},await pub(),dec(p[1]),dec(p[0]));
+      if(!ok)return null;return JSON.parse(new TextDecoder().decode(dec(p[0])));
+    }catch(_){return null}
+  }
+  let lic=null,usage=ld(UK)||{day:day(),sec:0,seen:0},locked=true,reason='',busy=true,badge=null,ov=null;
+  let chk=ld(CK)||{ok:0,rev:{}},pend=false,lastTry=0,needV=false;
+  if(!chk.rev)chk.rev={};
+  /* hỏi máy chủ xem mã có bị thu hồi không: 'ok' | 'rev' | 'err' */
+  async function check(id){
+    pend=true;lastTry=Date.now();
+    try{
+      const r=await fetch(API+'/status?id='+encodeURIComponent(id)+'&_='+Date.now(),{cache:'no-store'});
+      if(!r.ok)throw 0;
+      const j=await r.json();
+      if(!j||j.ok!==true)throw 0;
+      chk.ok=Date.now();
+      if(j.revoked)chk.rev[id]=1;else delete chk.rev[id];
+      sv(CK,chk);return j.revoked?'rev':'ok';
+    }catch(_){return 'err'}
+    finally{pend=false}
+  }
+  async function poll(){
+    if(!API||!lic||pend)return;
+    await check(lic.p.id);evalState();ui();
+  }
+  /* kích hoạt bằng mã (dán tay hoặc từ link #k=…). Trả về thông báo lỗi, hoặc '' nếu thành công */
+  async function activate(t){
+    t=String(t||'').trim();
+    const p=await verify(t);
+    if(!p)return 'Mã không hợp lệ.';
+    if(p.did&&p.did!==did)return 'Mã này dành riêng cho thiết bị khác. Mã thiết bị của bạn là '+didFmt+' — hãy gửi mã này cho người quản lý để nhận mã đúng.';
+    const same=lic&&lic.p.id===p.id,act=same?lic.act:Date.now();
+    if((p.exp||act+p.dur)<=Date.now())return 'Mã này đã hết hạn.';
+    if(API){
+      const r=await check(p.id);
+      if(r==='rev')return 'Mã này đã bị thu hồi.';
+      if(r!=='ok')return 'Không kết nối được máy chủ xác minh. Kiểm tra mạng rồi thử lại.';
+    }
+    lic={tok:t,act,p};sv(LK,{tok:t,act});
+    if(!same)usage={day:day(),sec:0,seen:Date.now()};
+    sv(UK,usage);evalState();ui();return '';
+  }
+  const fmt=ms=>{const m=Math.max(0,Math.floor(ms/60000)),d=Math.floor(m/1440),h=Math.floor(m%1440/60),n=m%60;return d?d+' ngày '+h+' giờ':h?h+' giờ '+n+' phút':n+' phút'};
+  const expOf=()=>lic.p.exp?lic.p.exp:lic.act+lic.p.dur;
+  function evalState(){
+    if(!lic){locked=true;if(!(window.crypto&&crypto.subtle))reason='Trình duyệt không hỗ trợ mã hóa ở địa chỉ này. Hãy mở trang bằng https (hoặc Chrome/Edge).';return}
+    const now=Date.now();needV=false;
+    if(lic.p.did&&lic.p.did!==did){locked=true;reason='Mã này dành riêng cho thiết bị khác (mã thiết bị của bạn: '+didFmt+').';return}
+    if(usage.seen&&now<usage.seen-5*60000){locked=true;reason='Đồng hồ máy bị chỉnh lùi. Hãy chỉnh lại giờ đúng rồi tải lại trang.';return}
+    if(API){
+      if(chk.rev[lic.p.id]){locked=true;reason='Mã này đã bị thu hồi. Hãy liên hệ người quản lý.';return}
+      if(!chk.ok||now-chk.ok>GRACE*3600000||now<chk.ok-5*60000){
+        locked=true;needV=true;
+        reason=pend?'Đang xác minh tài khoản…':'Cần kết nối mạng để xác minh tài khoản (quá '+GRACE+' giờ chưa xác minh). Đang thử lại…';return
+      }
+    }
+    if(now>=expOf()){locked=true;reason='Tài khoản đã hết hạn. Hãy xin mã mới từ người quản lý.';return}
+    if(usage.day!==day()){usage={day:day(),sec:0,seen:now}}
+    if(lic.p.daily>0&&usage.sec>=lic.p.daily*60){locked=true;reason='Đã dùng hết '+lic.p.daily+' phút của hôm nay. Quay lại vào ngày mai.';return}
+    locked=false;reason='';
+  }
+  function ui(){
+    if(!document.body)return;
+    if(!ov||!ov.isConnected){
+      ov=document.createElement('div');ov.id='novaGate';
+      ov.style.cssText='position:fixed;inset:0;z-index:2147483000;background:rgba(5,4,15,.97);color:#EAF0FF;display:none;align-items:center;justify-content:center;font:14px/1.5 "Segoe UI",system-ui,sans-serif;padding:16px';
+      ov.innerHTML='<div style="max-width:420px;width:100%;background:#0d0a2b;border:1px solid #26F0FF;border-radius:16px;padding:20px;box-shadow:0 0 40px rgba(38,240,255,.25)"><div style="font-weight:800;font-size:20px;background:linear-gradient(90deg,#26F0FF,#FF3DA5);-webkit-background-clip:text;background-clip:text;color:transparent">NOVA SLIDES</div><div id="ngMsg" style="margin:10px 0;color:#9BA1D4"></div><textarea id="ngKey" rows="4" placeholder="Dán mã kích hoạt vào đây" style="width:100%;background:#05040F;color:#EAF0FF;border:1px solid #3a3470;border-radius:8px;padding:8px;font:12px monospace"></textarea><div id="ngErr" style="color:#FF6B7A;min-height:20px;margin:6px 0"></div><button id="ngGo" style="width:100%;padding:10px;border:0;border-radius:10px;font-weight:700;background:linear-gradient(90deg,#26F0FF,#8A5BFF);color:#05040F;cursor:pointer">Kích hoạt</button></div>';
+      document.body.appendChild(ov);
+      ov.querySelector('#ngGo').onclick=async()=>{
+        const e=ov.querySelector('#ngErr');e.textContent='';
+        const t=ov.querySelector('#ngKey').value.trim(),p=await verify(t);
+        if(!p){e.textContent='Mã không hợp lệ.';return}
+        const same=lic&&lic.p.id===p.id;
+        const act=same?lic.act:Date.now();
+        const L={tok:t,act,p};
+        if((L.p.exp||act+L.p.dur)<=Date.now()){e.textContent='Mã này đã hết hạn.';return}
+        if(API){
+          const btn=ov.querySelector('#ngGo');btn.disabled=true;e.textContent='Đang xác minh với máy chủ…';
+          const r=await check(p.id);btn.disabled=false;
+          if(r==='rev'){e.textContent='Mã này đã bị thu hồi.';return}
+          if(r!=='ok'){e.textContent='Không kết nối được máy chủ xác minh. Kiểm tra mạng rồi thử lại.';return}
+          e.textContent='';
+        }
+        lic=L;sv(LK,{tok:t,act});if(!same)usage={day:day(),sec:0,seen:Date.now()};sv(UK,usage);evalState();ui();
+      };
+      ov.addEventListener('keydown',e=>e.stopPropagation(),true);
+    }
+    if(!badge||!badge.isConnected){
+      badge=document.createElement('div');
+      badge.style.cssText='position:fixed;left:8px;bottom:8px;z-index:2147482999;background:rgba(13,10,43,.85);color:#9BA1D4;border:1px solid rgba(120,110,255,.4);border-radius:10px;padding:2px 9px;font:11px "Segoe UI",sans-serif;pointer-events:none';
+      document.body.appendChild(badge);
+    }
+    ov.style.display=locked?'flex':'none';
+    if(locked){ov.querySelector('#ngMsg').textContent=reason||(busy?'Đang kiểm tra…':'Nhập mã kích hoạt để sử dụng.')}
+    if(lic&&!locked){
+      const left=expOf()-Date.now();let t='Còn '+fmt(left);
+      if(lic.p.daily>0)t+=' · hôm nay còn '+Math.max(0,Math.ceil(lic.p.daily-usage.sec/60))+' phút';
+      badge.textContent=lic.p.name+' · '+t;badge.style.display='block';
+    }else badge.style.display='none';
+  }
+  async function boot(){
+    const s=ld(LK);
+    if(s){const p=await verify(s.tok);if(p)lic={tok:s.tok,act:s.act||Date.now(),p}}
+    busy=false;evalState();ui();
+    if(API&&lic)poll();
+    setInterval(()=>{
+      if(API&&lic&&!pend&&Date.now()-lastTry>(needV?20000:300000))poll();
+      if(lic&&!locked&&!document.hidden){if(usage.day!==day())usage={day:day(),sec:0,seen:0};usage.sec++}
+      if(!lic||!locked)usage.seen=Math.max(usage.seen||0,Date.now());
+      evalState();ui();
+      if(usage.sec%5===0)sv(UK,usage);
+      if(locked&&typeof presClose==='function'&&typeof P!=='undefined'&&P&&P.on){try{presClose()}catch(_){}}
+    },1000);
+    addEventListener('keydown',e=>{if(locked&&!(e.target&&e.target.closest&&e.target.closest('#novaGate'))){e.stopImmediatePropagation();e.preventDefault()}},true);
+    document.addEventListener('visibilitychange',()=>{sv(UK,usage);if(!document.hidden)poll()});
+    addEventListener('online',poll);
+    addEventListener('beforeunload',()=>sv(UK,usage));
+  }
+  const start=()=>{ui();boot()};
+  if(document.body)start();else document.addEventListener('DOMContentLoaded',start);
+})({"crv":"P-256","ext":true,"key_ops":["verify"],"kty":"EC","x":"F1qgonP8FgQiMjXpE-5MobRTcSdEtJSJeHgTtUHQVP0","y":"Dmn4QCSjB7rQFD2RLEW0cjEpmliqtCFB_O3KTfo88co"},"",24);
+</script>
+<!--NOVA_GATE_END-->
 </body>
 </html>
