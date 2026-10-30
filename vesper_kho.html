@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'">
+<title>Vesper Kho</title>
+<style>
+:root{--bg:#090b18;--panel:#12162c;--line:#232a4d;--line2:#2f3869;--tx:#e8ecff;--mut:#8f9ac8;--acc:#26F0FF;--acc2:#8A5BFF;--ok:#3DDC84;--err:#FF5C7A;--mono:ui-monospace,"SF Mono",Consolas,Menlo,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;min-height:100vh}
+main{max-width:720px;margin:0 auto;padding:36px 18px 80px}
+h1{font-size:28px;margin:0 0 4px;letter-spacing:-.02em}
+h1 i{font-style:normal;background:linear-gradient(135deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:var(--mut);margin:0 0 26px}
+details,.drop,.item{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+details{padding:0 16px;margin-bottom:16px}
+summary{padding:13px 0;cursor:pointer;font-weight:600}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+label{display:block;font-size:12px;color:var(--mut);margin-bottom:3px}
+input[type=text],input[type=password]{width:100%;padding:8px 10px;background:var(--bg);border:1px solid var(--line2);border-radius:8px;color:var(--tx);font:inherit}
+input:focus-visible,button:focus-visible,.drop:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.full{grid-column:1/-1}
+.chk{display:flex;gap:8px;align-items:center;margin:4px 0 12px;font-size:13px;color:var(--mut)}
+.chk label{margin:0}
+.hint{font-size:12px;color:var(--mut);margin:0 0 14px}
+.btn{padding:8px 14px;border:1px solid var(--line2);background:#181d38;border-radius:8px;font:inherit;font-weight:600;color:var(--tx);cursor:pointer}
+.btn:hover{border-color:var(--acc)}
+.btn.pri{background:linear-gradient(135deg,var(--acc),var(--acc2));color:#04101a;border:0}
+.btn.sm{padding:4px 10px;font-size:12px}
+.drop{display:grid;place-items:center;text-align:center;padding:38px 16px;border-style:dashed;border-color:var(--line2);cursor:pointer;margin-bottom:22px}
+.drop.on{border-color:var(--acc);background:#26F0FF14}
+.drop b{display:block;font-size:16px;margin-bottom:2px}
+.drop span{color:var(--mut);font-size:13px}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.item{padding:12px 14px}
+.top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.top b{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.top small{color:var(--mut)}
+.code{font:12px/1.4 var(--mono);word-break:break-all;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--acc);max-height:64px;overflow:hidden}
+.st{font-size:13px}.st.ok{color:var(--ok)}.st.err{color:var(--err)}
+.empty{color:var(--mut);text-align:center;padding:14px}
+.shell{margin-top:26px}
+.shell pre{margin:8px 0 0;padding:12px;background:var(--bg);border:1px solid var(--line);border-radius:10px;font:12px/1.5 var(--mono);overflow:auto;max-height:260px;color:var(--mut);white-space:pre}
+@media(max-width:520px){.grid{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+<h1>Vesper <i>Kho</i></h1>
+<p class="sub">Mã hóa module HTML, đưa lên GitHub, và nhận lại một mã VSK1 để vỏ Vesper tự tải về.</p>
+
+<details id="cfg" open>
+  <summary id="cfgSum">Kết nối GitHub</summary>
+  <div class="grid">
+    <div><label for="o">Tài khoản (owner)</label><input type="text" id="o" autocomplete="off"></div>
+    <div><label for="r">Kho (repo, để chế độ public)</label><input type="text" id="r" autocomplete="off"></div>
+    <div><label for="b">Nhánh</label><input type="text" id="b" value="main" autocomplete="off"></div>
+    <div><label for="t">Token (quyền Contents: read/write)</label><input type="password" id="t" autocomplete="off"></div>
+  </div>
+  <div class="full"><label for="p">Mật khẩu Kho (khóa cấu hình và danh sách mã trong trình duyệt)</label><input type="password" id="p" autocomplete="new-password"></div>
+  <p class="hint" style="margin-top:10px">Token chỉ sống trong tab này và mất khi đóng tab. Nó không bao giờ nằm trong mã VSK1 hay trong vỏ.</p>
+  <button class="btn pri" id="save" style="margin-bottom:14px">Lưu kết nối</button>
+  <button class="btn" id="unlock" style="margin-bottom:14px" hidden>Mở khóa dữ liệu đã lưu</button>
+</details>
+
+<div class="drop" id="drop" tabindex="0" role="button" aria-label="Chọn tệp module">
+  <div><b>Thả tệp module .html vào đây</b><span>hoặc bấm để chọn, được nhiều tệp một lúc</span></div>
+</div>
+<input type="file" id="pick" accept=".html,text/html" multiple hidden>
+
+<p class="hint" id="warn" hidden>Chưa đặt mật khẩu: danh sách mã chỉ tồn tại đến khi đóng tab. Hãy chép mã ngay sau khi tạo.</p>
+<ul id="list" aria-live="polite"></ul>
+
+<details class="shell">
+  <summary>Đoạn code cho vỏ Vesper</summary>
+  <p class="hint" style="margin-top:0">Thêm một lần vào vỏ (chi tiết trong tin nhắn trả lời). Vỏ chỉ biết mã VSK1, không biết gì về trang Kho này.</p>
+  <button class="btn sm" id="cpShell">Sao chép hàm nạp</button>
+  <pre id="shellCode"></pre>
+</details>
+</main>
+
+<script id="shellSrc" type="text/plain">async function loadFromKho(code) {
+  const d = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+  const m = String(code || '').trim().match(/^VSK1\.([\w-]+)$/);
+  if (!m) throw new Error('Mã không đúng định dạng VSK1');
+  const [o, r, sha, path, key, name] = JSON.parse(new TextDecoder().decode(d(m[1])));
+  const res = await fetch(`https://raw.githubusercontent.com/${o}/${r}/${sha}/${path}`);
+  if (!res.ok) throw new Error('Không tải được module (' + res.status + ')');
+  const buf = new Uint8Array(await res.arrayBuffer());
+  const k = await crypto.subtle.importKey('raw', d(key), 'AES-GCM', false, ['decrypt']);
+  let plain;
+  try { plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(0, 12) }, k, buf.slice(12)); }
+  catch (e) { throw new Error('Giải mã thất bại: mã sai hoặc tệp đã bị sửa'); }
+  const file = new File([plain], name, { type: 'text/html' });
+  const id = await Mods.identify(file);
+  if (!id) throw new Error('Không nhận ra tệp này là module nào của Vesper');
+  await Mods.setCustom(id, file);
+  return MOD_BY[id].name;
+}</script>
+
+<script>
+const $ = s => document.querySelector(s);
+const enc = new TextEncoder();
+const hex = n => [...crypto.getRandomValues(new Uint8Array(n))].map(x => x.toString(16).padStart(2, '0')).join('');
+const b64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+const b64u = u8 => b64(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const ls = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} }, del: k => { try { localStorage.removeItem(k); } catch (e) {} } };
+const ss = { get: k => { try { return sessionStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch (e) {} } };
+
+/* ── kết nối + kho khóa (trang chạy trên miền dùng chung, nên không để dữ liệu nhạy cảm dạng thô) ── */
+let pass = '', items = [];
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function kdf(p, salt) {
+  const base = await crypto.subtle.importKey('raw', enc.encode(p), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 250000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+function getCfg() { return { o: $('#o').value.trim(), r: $('#r').value.trim(), b: $('#b').value.trim() || 'main', t: $('#t').value.trim() }; }
+function ready() { const c = getCfg(); return c.o && c.r && c.t; }
+function sumCfg() { const c = getCfg(); $('#cfgSum').textContent = ready() ? 'Kết nối GitHub: ' + c.o + '/' + c.r : 'Kết nối GitHub'; if (ready()) $('#cfg').open = false; }
+async function saveVault() {
+  if (!pass) return;
+  const c = getCfg(), salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const k = await kdf(pass, salt);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, k, enc.encode(JSON.stringify({ c: { o: c.o, r: c.r, b: c.b }, items }))));
+  ls.set('vk.v', JSON.stringify({ s: b64(salt), i: b64(iv), d: b64(ct) }));
+}
+async function openVault(p) {
+  const v = JSON.parse(ls.get('vk.v'));
+  const k = await kdf(p, unb64(v.s));
+  const j = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(v.i) }, k, unb64(v.d))));
+  pass = p; items = j.items || [];
+  $('#o').value = j.c.o || ''; $('#r').value = j.c.r || ''; $('#b').value = j.c.b || 'main';
+}
+function loadCfg() {
+  ['vk.cfg', 'vk.tok', 'vk.items'].forEach(ls.del);
+  $('#t').value = ss.get('vk.tok') || '';
+  $('#unlock').hidden = !ls.get('vk.v');
+  sumCfg();
+}
+$('#save').onclick = async () => {
+  const c = getCfg(), p = $('#p').value;
+  if (ls.get('vk.v') && !pass && p && !confirm('Đã có dữ liệu được khóa. Lưu mới sẽ ghi đè và mất danh sách cũ. Tiếp tục?')) return;
+  ss.set('vk.tok', c.t);
+  if (p) { pass = p; await saveVault(); $('#unlock').hidden = true; }
+  sumCfg(); render();
+};
+$('#unlock').onclick = async () => {
+  try { await openVault($('#p').value); $('#unlock').hidden = true; sumCfg(); render(); }
+  catch (e) { alert('Sai mật khẩu hoặc dữ liệu hỏng.'); }
+};
+
+/* ── mã hóa + tải lên ── */
+async function seal(file, cfg) {
+  const data = new Uint8Array(await file.arrayBuffer());
+  if (data.length > 25 * 1024 * 1024) throw new Error('Tệp lớn hơn 25 MB');
+  const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt']);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data));
+  const out = new Uint8Array(12 + ct.length); out.set(iv); out.set(ct, 12);
+  const raw = new Uint8Array(await crypto.subtle.exportKey('raw', key));
+  const path = 'v/' + hex(8) + '.bin';
+  const res = await fetch(`https://api.github.com/repos/${encodeURIComponent(cfg.o)}/${encodeURIComponent(cfg.r)}/contents/${path}`, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + cfg.t, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'v', content: b64(out), branch: cfg.b })
+  });
+  if (!res.ok) {
+    let m = ''; try { m = (await res.json()).message || ''; } catch (e) {}
+    throw new Error(res.status === 401 || res.status === 403 ? 'Token bị từ chối (' + res.status + '). Kiểm tra quyền Contents' : res.status === 404 ? 'Không thấy kho hoặc token không có quyền vào kho này' : 'GitHub báo lỗi ' + res.status + ' ' + m);
+  }
+  const j = await res.json();
+  return 'VSK1.' + b64u(enc.encode(JSON.stringify([cfg.o, cfg.r, j.commit.sha, path, b64u(raw), file.name])));
+}
+
+/* ── danh sách ── */
+const saveItems = () => saveVault();
+function render() {
+  $('#warn').hidden = !!pass || !items.length;
+  const ul = $('#list'); ul.textContent = '';
+  if (!items.length) { const li = document.createElement('li'); li.className = 'empty'; li.textContent = 'Chưa có module nào trong Kho.'; ul.append(li); return; }
+  items.forEach((it, i) => {
+    const li = document.createElement('li'); li.className = 'item';
+    const top = document.createElement('div'); top.className = 'top';
+    const b = document.createElement('b'); b.textContent = it.name;
+    const sm = document.createElement('small'); sm.textContent = new Date(it.t).toLocaleDateString('vi-VN');
+    const cp = document.createElement('button'); cp.className = 'btn sm pri'; cp.textContent = 'Sao chép mã';
+    cp.onclick = async () => { try { await navigator.clipboard.writeText(it.code); cp.textContent = 'Đã chép'; } catch (e) { cp.textContent = 'Chép thủ công'; } setTimeout(() => cp.textContent = 'Sao chép mã', 1600); };
+    const rm = document.createElement('button'); rm.className = 'btn sm'; rm.textContent = 'Bỏ khỏi danh sách';
+    rm.onclick = () => { if (confirm('Bỏ “' + it.name + '” khỏi danh sách? Tệp mã hóa vẫn nằm trên GitHub, và bạn sẽ mất mã nếu chưa chép.')) { items.splice(i, 1); saveItems(); render(); } };
+    top.append(b, sm, cp, rm);
+    const code = document.createElement('div'); code.className = 'code'; code.textContent = it.code;
+    li.append(top, code); ul.append(li);
+  });
+}
+function pending(name) {
+  const li = document.createElement('li'); li.className = 'item';
+  li.innerHTML = '<div class="top"><b></b></div><div class="st">Đang mã hóa và tải lên…</div>';
+  li.querySelector('b').textContent = name; $('#list').prepend(li); return li;
+}
+async function handle(files) {
+  if (!ready()) { $('#cfg').open = true; alert('Điền và lưu kết nối GitHub trước.'); return; }
+  const cfg = getCfg();
+  for (const f of files) {
+    if (!/\.html?$/i.test(f.name)) continue;
+    const li = pending(f.name);
+    try {
+      const code = await seal(f, cfg);
+      items.unshift({ name: f.name, code, t: Date.now() }); saveItems(); $('#warn').hidden = !!pass;
+    } catch (e) {
+      li.querySelector('.st').className = 'st err'; li.querySelector('.st').textContent = e.message;
+      await new Promise(r => setTimeout(r, 4000));
+    }
+  }
+  render();
+}
+
+/* ── thả tệp ── */
+const drop = $('#drop'), pick = $('#pick');
+drop.onclick = () => pick.click();
+drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick.click(); } };
+pick.onchange = () => { handle([...pick.files]); pick.value = ''; };
+['dragenter', 'dragover'].forEach(n => drop.addEventListener(n, e => { e.preventDefault(); drop.classList.add('on'); }));
+['dragleave', 'drop'].forEach(n => drop.addEventListener(n, e => { e.preventDefault(); drop.classList.remove('on'); }));
+drop.addEventListener('drop', e => handle([...e.dataTransfer.files]));
+
+/* ── đoạn code cho vỏ ── */
+const shellSrc = $('#shellSrc').textContent;
+$('#shellCode').textContent = shellSrc;
+$('#cpShell').onclick = async e => { try { await navigator.clipboard.writeText(shellSrc); e.target.textContent = 'Đã chép'; } catch (x) { e.target.textContent = 'Hãy chép tay'; } setTimeout(() => e.target.textContent = 'Sao chép hàm nạp', 1600); };
+
+loadCfg(); render();
+</script>
+</body>
+</html>
